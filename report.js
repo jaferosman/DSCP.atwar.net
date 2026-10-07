@@ -10,6 +10,7 @@
     ["haraka.html", "haraka", "حركة الأشهر"],
     ["tirador-qita.html", "tsec", "فروع وقطاعات"],
     ["atwar-manatiq.html", "areg", "مناطق أطوار"],
+    ["asnaf-ada.html", "ada", "تحليل الأصناف"],
   ];
 
   function esc(value) {
@@ -205,6 +206,11 @@
           <span class="card-n">07</span>
           <div><h2>مناطق أطوار</h2><p>توزيع المبيعات على المناطق، وعدد العملاء في كل منطقة دون تكرار.</p></div>
           <div class="card-stat"><strong class="num">${fmtQty(new Set(R.atwarLines.map((line) => line.region)).size)}</strong><span>منطقة</span></div>
+        </a>
+        <a class="card" href="asnaf-ada.html">
+          <span class="card-n">08</span>
+          <div><h2>تحليل أداء الأصناف</h2><p>مبيعات الصنف وربحيته وسعر بيعه حسب الشركة والمجموعة والفترة.</p></div>
+          <div class="card-stat"><strong class="num">${fmtQty(R.groups.length)}</strong><span>مجموعة</span></div>
         </a>
       </div>
       <section class="section" style="margin-top:1rem">
@@ -786,7 +792,7 @@
       const y = 26 - ((value - min) / span) * 20;
       return `${x},${y.toFixed(1)}`;
     }).join(" ");
-    const color = sep > jul ? "#0c6844" : sep < jul ? "#9b2c2c" : "#8a5814";
+    const color = sep > jul ? "#0c6844" : sep < jul ? "#9b2c2c" : "#2C4C7C";
     return `<svg class="spark" viewBox="0 0 80 32" width="80" height="32" aria-hidden="true"><polyline fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" points="${points}"/></svg>`;
   }
 
@@ -1309,6 +1315,211 @@
     draw();
   }
 
+  const PERF_MONTHS = [
+    [7, "يوليو"],
+    [8, "أغسطس"],
+    [9, "سبتمبر"],
+    [10, "أكتوبر"],
+  ];
+
+  function renderItemPerf() {
+    const monthOptions = PERF_MONTHS.map(([id, label]) => `<option value="${id}">${label}</option>`).join("");
+    const groupButtons = R.groups.map((group) => `<button type="button" data-group="${group.id}" aria-pressed="false">${esc(group.name)}</button>`).join("");
+    const app = document.getElementById("app");
+    const state = { company: "all", group: "all", from: 7, to: 10, q: "", sort: "sales", dir: -1, page: 0 };
+    const pageSize = new URLSearchParams(location.search).has("print") ? 100000 : 40;
+    const columns = [
+      { key: "sku", label: "رقم الصنف", type: "text", stick: true, html: (row) => `<span class="sku">${esc(row.sku)}</span>` },
+      { key: "name", label: "الوصف", type: "text", clip: true, html: (row) => esc(row.name) },
+      { key: "sector", label: "القطاع", type: "text", clip: true, html: (row) => esc(row.sector) },
+      { key: "stock", label: "المخزون", type: "num", html: (row) => num(row.stock, "qty") },
+      { key: "unitCost", label: "تكلفة الحبة", type: "num", html: (row) => num(row.unitCost, "money") },
+      { key: "monthSales", label: "إجمالي المبيعات الشهرية", type: "num", html: (row) => num(row.monthSales, "money") },
+      { key: "avgPrice", label: "متوسط سعر البيع الشهري", type: "num", html: (row) => num(row.avgPrice, "money") },
+      { key: "monthProfit", label: "الربحية الشهرية", type: "num", html: (row) => num(row.monthProfit, "profit") },
+      { key: "sales", label: "إجمالي المبيعات", type: "num", html: (row) => num(row.sales, "money") },
+      { key: "margin", label: "متوسط الربحية الإجمالي", type: "num", html: (row) => num(row.margin, "pct") },
+    ];
+
+    function monthName(id) {
+      return PERF_MONTHS.find(([month]) => month === id)[1];
+    }
+
+    function companyName() {
+      if (state.company === "atwar") return "أطوار";
+      if (state.company === "tirador") return "تيرادور";
+      return "أطوار وتيرادور";
+    }
+
+    function groupName() {
+      if (state.group === "all") return "كل المجموعات";
+      return R.groups.find((group) => String(group.id) === String(state.group)).name;
+    }
+
+    function rows() {
+      const months = [];
+      for (let month = state.from; month <= state.to; month += 1) months.push(month);
+      const span = months.length;
+      const companies = state.company === "all" ? ["atwar", "tirador"] : [state.company];
+      const query = state.q.trim();
+      return R.itemPerf.filter((item) => {
+        if (state.group !== "all" && String(item.group) !== String(state.group)) return false;
+        if (!query) return true;
+        return `${item.sku} ${item.name} ${item.sector}`.includes(query);
+      }).map((item) => {
+        let qty = 0;
+        let sales = 0;
+        let stock = 0;
+        if (companies.includes("atwar")) stock += item.stock[0] || 0;
+        if (companies.includes("tirador")) stock += item.stock[1] || 0;
+        companies.forEach((company) => {
+          months.forEach((month) => {
+            const cell = item[company][month - 7];
+            qty += cell[0];
+            sales += cell[1];
+          });
+        });
+        const profit = sales - qty * item.unitCost;
+        return {
+          sku: item.sku,
+          name: item.name,
+          sector: item.sector,
+          stock,
+          unitCost: item.unitCost,
+          monthSales: sales / span,
+          avgPrice: Math.abs(qty) > 1e-6 ? sales / qty : null,
+          monthProfit: profit / span,
+          sales,
+          margin: Math.abs(sales) > 0.005 ? profit / sales : null,
+        };
+      });
+    }
+
+    function draw() {
+      const view = rows();
+      const sorted = sortRows(view, columns, state.sort, state.dir);
+      const pages = Math.max(1, Math.ceil(sorted.length / pageSize));
+      if (state.page >= pages) state.page = 0;
+      const slice = sorted.slice(state.page * pageSize, state.page * pageSize + pageSize);
+      const sales = view.reduce((sum, row) => sum + row.sales, 0);
+      const profit = view.reduce((sum, row) => sum + row.monthProfit * (state.to - state.from + 1), 0);
+      const stock = view.reduce((sum, row) => sum + row.stock, 0);
+      const host = document.getElementById("perf-table");
+      host.innerHTML = tableHtml(columns, slice, state.sort, state.dir);
+      host.querySelectorAll("th[data-k]").forEach((th) => {
+        const activate = () => {
+          const key = th.dataset.k;
+          const type = th.dataset.t || "num";
+          if (state.sort === key) state.dir *= -1;
+          else {
+            state.sort = key;
+            state.dir = type === "text" ? 1 : -1;
+          }
+          state.page = 0;
+          draw();
+        };
+        th.addEventListener("click", activate);
+        th.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            activate();
+          }
+        });
+      });
+      document.getElementById("perf-kpis").innerHTML = kpis([
+        { label: "الأصناف", html: num(view.length, "qty") },
+        { label: "المخزون", html: num(stock, "qty"), note: "رصيد حالي" },
+        { label: "إجمالي المبيعات", html: num(sales, "money") },
+        { label: "صافي الربح", html: num(profit, "profit"), tone: profit >= 0 ? "good" : "bad" },
+        { label: "متوسط الربحية", html: num(Math.abs(sales) > 0.005 ? profit / sales : null, "pct"), tone: "gold" },
+        { label: "أشهر الفترة", html: num(state.to - state.from + 1, "qty"), note: `${monthName(state.from)} إلى ${monthName(state.to)}` },
+      ]);
+      document.getElementById("perf-banner").textContent = `التصفية المطبقة: ${companyName()}، ${groupName()}، من ${monthName(state.from)} إلى ${monthName(state.to)}.`;
+      document.getElementById("perf-meta").innerHTML = `المعروض ${num(view.length, "qty")} صنفاً.`;
+      const pager = document.getElementById("perf-pager");
+      pager.innerHTML = `
+        <button type="button" id="perf-prev" ${state.page === 0 ? "disabled" : ""}>السابق</button>
+        <span>صفحة ${state.page + 1} من ${pages}</span>
+        <button type="button" id="perf-next" ${state.page >= pages - 1 ? "disabled" : ""}>التالي</button>`;
+      document.getElementById("perf-prev").addEventListener("click", () => { state.page -= 1; draw(); });
+      document.getElementById("perf-next").addEventListener("click", () => { state.page += 1; draw(); });
+    }
+
+    app.innerHTML = `
+      <div id="perf-kpis"></div>
+      <p id="perf-banner" class="note"></p>
+      <section class="section">
+        <h2>أداء الأصناف</h2>
+        <div class="toolbar">
+          <label class="field">الشركة
+            <select id="perf-company">
+              <option value="all">أطوار وتيرادور</option>
+              <option value="atwar">أطوار</option>
+              <option value="tirador">تيرادور</option>
+            </select>
+          </label>
+          <label class="field">من شهر
+            <select id="perf-from">${monthOptions}</select>
+          </label>
+          <label class="field">إلى شهر
+            <select id="perf-to">${monthOptions}</select>
+          </label>
+          <label class="field">بحث
+            <input id="perf-q" type="search" placeholder="رقم الصنف أو وصفه أو قطاعه">
+          </label>
+        </div>
+        <div class="chips" id="perf-groups">
+          <button type="button" data-group="all" aria-pressed="true">كل المجموعات</button>
+          ${groupButtons}
+        </div>
+        <p class="meta-line" id="perf-meta"></p>
+        <p class="scroll-hint">انقر عنوان العمود للترتيب.</p>
+        <div id="perf-table"></div>
+        <div class="pager" id="perf-pager"></div>
+      </section>`;
+
+    document.getElementById("perf-to").value = "10";
+    document.getElementById("perf-company").addEventListener("change", (event) => {
+      state.company = event.target.value;
+      state.page = 0;
+      draw();
+    });
+    document.getElementById("perf-from").addEventListener("change", (event) => {
+      state.from = Number(event.target.value);
+      if (state.from > state.to) {
+        state.to = state.from;
+        document.getElementById("perf-to").value = String(state.to);
+      }
+      state.page = 0;
+      draw();
+    });
+    document.getElementById("perf-to").addEventListener("change", (event) => {
+      state.to = Number(event.target.value);
+      if (state.to < state.from) {
+        state.from = state.to;
+        document.getElementById("perf-from").value = String(state.from);
+      }
+      state.page = 0;
+      draw();
+    });
+    document.getElementById("perf-q").addEventListener("input", (event) => {
+      state.q = event.target.value;
+      state.page = 0;
+      draw();
+    });
+    document.getElementById("perf-groups").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      state.group = button.dataset.group;
+      state.page = 0;
+      document.querySelectorAll("#perf-groups button").forEach((item) => {
+        item.setAttribute("aria-pressed", item === button ? "true" : "false");
+      });
+      draw();
+    });
+    draw();
+  }
+
   bootChrome();
   const pages = {
     home: renderHome,
@@ -1319,6 +1530,7 @@
     haraka: renderHaraka,
     tsec: renderBranchSectors,
     areg: renderAtwarRegions,
+    ada: renderItemPerf,
   };
   pages[PAGE]();
 })();
