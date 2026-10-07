@@ -11,6 +11,9 @@
     ["tirador-qita.html", "tsec", "فروع وقطاعات"],
     ["atwar-manatiq.html", "areg", "مناطق أطوار"],
     ["asnaf-ada.html", "ada", "تحليل الأصناف"],
+    ["asnaf-salb.html", "salb", "كمية سالبة"],
+    ["asnaf-sifr.html", "sifr", "حركة صفرية"],
+    ["tatawor.html", "pace", "تطور الأداء"],
   ];
 
   function esc(value) {
@@ -132,8 +135,60 @@
     }).join("")}</div>`;
   }
 
-  function kpis(items) {
-    return `<div class="kpis">${items.map((item) => `
+  function donutCard(portion, title, detail) {
+    const value = finite(portion) ? Math.max(0, Math.min(portion, 1)) : 0;
+    const radius = 46;
+    const circumference = 2 * Math.PI * radius;
+    const filled = circumference * value;
+    const rest = Math.max(circumference - filled, 0);
+    const arc = value <= 0 ? "" : `<circle cx="60" cy="60" r="${radius}" class="donut-fill" stroke-dasharray="${filled.toFixed(3)} ${rest.toFixed(3)}" transform="rotate(-90 60 60)"/>`;
+    return `<article class="donut">
+      <svg viewBox="0 0 120 120" role="img" aria-label="${esc(title)}">
+        <circle cx="60" cy="60" r="${radius}" class="donut-track"/>
+        ${arc}
+        <text x="60" y="65" text-anchor="middle" class="donut-pct">${fmtPct(portion)}</text>
+      </svg>
+      <div>
+        <p class="kpi-label">${esc(title)}</p>
+        <p class="kpi-note">${detail}</p>
+      </div>
+    </article>`;
+  }
+
+  function pieChart(rows, labelFn, valueFn, formatFn) {
+    const palette = ["#2C4C7C", "#C6A36A", "#6E8B74", "#8C6A4A", "#7E8AA0"];
+    const usable = rows.filter((row) => (valueFn(row) || 0) > 0);
+    if (!usable.length) return `<p class="lead">لا توجد بيانات لهذا الاختيار.</p>`;
+    const total = usable.reduce((sum, row) => sum + valueFn(row), 0);
+    const cx = 80;
+    const cy = 80;
+    const radius = 68;
+    let angle = -Math.PI / 2;
+    const slices = usable.map((row, index) => {
+      const value = valueFn(row);
+      const sweep = total ? (value / total) * Math.PI * 2 : 0;
+      const start = angle;
+      angle += sweep;
+      return { row, value, start, end: angle, color: palette[index % palette.length] };
+    });
+    const paths = slices.map((slice) => {
+      const span = slice.end - slice.start;
+      if (span >= Math.PI * 2 - 0.001) {
+        return `<path d="M ${cx - radius} ${cy} A ${radius} ${radius} 0 1 1 ${cx + radius} ${cy} A ${radius} ${radius} 0 1 1 ${cx - radius} ${cy}" fill="${slice.color}"></path>`;
+      }
+      const x0 = cx + radius * Math.cos(slice.start);
+      const y0 = cy + radius * Math.sin(slice.start);
+      const x1 = cx + radius * Math.cos(slice.end);
+      const y1 = cy + radius * Math.sin(slice.end);
+      const large = span > Math.PI ? 1 : 0;
+      return `<path d="M ${cx} ${cy} L ${x0} ${y0} A ${radius} ${radius} 0 ${large} 1 ${x1} ${y1} Z" fill="${slice.color}"></path>`;
+    }).join("");
+    const legend = slices.map((slice) => `<div class="pie-key"><span class="swatch" style="background:${slice.color}"></span><span>${esc(labelFn(slice.row))}</span><strong>${formatFn(slice.value)}</strong></div>`).join("");
+    return `<div class="pie-wrap"><svg class="pie" viewBox="0 0 160 160" role="img">${paths}</svg><div class="pie-legend">${legend}</div></div>`;
+  }
+
+  function kpis(items, extra) {
+    return `<div class="kpis${extra ? ` ${extra}` : ""}">${items.map((item) => `
       <article class="kpi ${item.tone || ""}">
         <p class="kpi-label">${esc(item.label)}</p>
         <p class="kpi-value">${item.html}</p>
@@ -158,19 +213,28 @@
 
   function renderHome() {
     const t = R.totals;
+    const costRate = t.openValue ? t.cogs / t.openValue : null;
     const best = R.sectors.slice().sort((a, b) => (b.qtyRate || -1) - (a.qtyRate || -1))[0];
     const worst = R.sectors.slice().sort((a, b) => a.profit - b.profit)[0];
-    const idle = R.items.filter((item) => !item.netQty && !item.salesValue).length;
+    const negativeItems = R.items.filter(negativeQty);
+    const idleItems = R.items.filter(noMovement);
     const app = document.getElementById("app");
     app.innerHTML = `
       ${kpis([
-        { label: "قيمة المخزون الافتتاحي", html: num(t.openValue, "money"), note: `${fmtQty(t.openQty)} وحدة` },
-        { label: "صافي الكمية المباعة", html: num(t.netQty, "qty"), note: "يوليو إلى 2 أكتوبر" },
-        { label: "إنجاز الكمية", html: rate(t.qtyRate), tone: "gold", note: "من رصيد الافتتاح" },
-        { label: "إنجاز القيمة", html: rate(t.valueRate), tone: "gold", note: "من قيمة الافتتاح" },
+        { label: "كمية المخزون الافتتاحي", html: num(t.openQty, "qty"), note: "وحدة" },
+        { label: "كمية المباع", html: num(t.netQty, "qty"), note: "يوليو إلى 2 أكتوبر" },
+        { label: "إنجاز الكمية", html: rate(t.qtyRate), tone: "gold", note: "المباع من الافتتاح" },
+        { label: "تكلفة المخزون الافتتاحي", html: num(t.openValue, "money"), note: "بالتكلفة" },
+        { label: "تكلفة المباع", html: num(t.cogs, "money"), note: "كمية مباعة × تكلفة الحبة" },
+        { label: "إنجاز التكلفة", html: rate(costRate), tone: "gold", note: "تكلفة المباع من الافتتاح" },
         { label: "قيمة المبيعات", html: num(t.salesValue, "money"), note: "غير شاملة الضريبة" },
-        { label: "صافي الربح", html: num(t.profit, "profit"), tone: t.profit >= 0 ? "good" : "bad", note: `هامش ${fmtPct(t.margin)}` },
-      ])}
+        { label: "صافي الربح", html: num(t.profit, "profit"), tone: t.profit >= 0 ? "good" : "bad" },
+        { label: "هامش الربح", html: rate(t.margin), tone: t.margin >= 0 ? "good" : "bad", note: "الربح من المبيعات" },
+      ], "board")}
+      <div class="donuts">
+        ${donutCard(t.qtyRate, "إنجاز الكمية", `${fmtQty(t.netQty)} من ${fmtQty(t.openQty)}`)}
+        ${donutCard(costRate, "إنجاز التكلفة", `${fmtMoney(t.cogs)} من ${fmtMoney(t.openValue)}`)}
+      </div>
       <div class="cards">
         <a class="card" href="asnaf.html">
           <span class="card-n">01</span>
@@ -212,13 +276,28 @@
           <div><h2>تحليل أداء الأصناف</h2><p>مبيعات الصنف وربحيته وسعر بيعه حسب الشركة والمجموعة والفترة.</p></div>
           <div class="card-stat"><strong class="num">${fmtQty(R.groups.length)}</strong><span>مجموعة</span></div>
         </a>
+        <a class="card" href="asnaf-salb.html">
+          <span class="card-n">09</span>
+          <div><h2>كمية مبيعات سالبة</h2><p>أصناف زاد مرتجعها على كمية البيع، فصافي الكمية دون الصفر.</p></div>
+          <div class="card-stat"><strong class="num">${fmtQty(negativeItems.length)}</strong><span>صنف</span></div>
+        </a>
+        <a class="card" href="asnaf-sifr.html">
+          <span class="card-n">10</span>
+          <div><h2>حركة مبيعات صفرية</h2><p>أصناف بلا فاتورة بيع وبلا مرتجع خلال الفترة.</p></div>
+          <div class="card-stat"><strong class="num">${fmtQty(idleItems.length)}</strong><span>صنف</span></div>
+        </a>
+        <a class="card" href="tatawor.html">
+          <span class="card-n">11</span>
+          <div><h2>تطور الأداء</h2><p>مقارنة أسبوع بالأسبوع الذي يسبقه، وشهر بالشهر الذي يسبقه.</p></div>
+          <div class="card-stat"><strong class="num">${num((R.pace.weeks.at(-1).all.sales - R.pace.weeks.at(-2).all.sales) / Math.abs(R.pace.weeks.at(-2).all.sales), "deltaPct")}</strong><span>مبيعات آخر أسبوع</span></div>
+        </a>
       </div>
       <section class="section" style="margin-top:1rem">
         <h2>قراءة سريعة</h2>
-        <p>بيع من رصيد الافتتاح ما يعادل ${num(t.qtyRate, "pct")} من الكمية و${num(t.valueRate, "pct")} من القيمة. إنجاز القيمة أعلى لأن الأصناف المباعة أغلى من متوسط الرصيد الراكد.</p>
+        <p>بيع من رصيد الافتتاح ما يعادل ${num(t.qtyRate, "pct")} من الكمية و${num(costRate, "pct")} من تكلفته. قيمة المبيعات ${num(t.salesValue, "money")} بهامش ${num(t.margin, "pct")}.</p>
         <p>صافي الربح ${num(t.profit, "profit")} ريال. منه ${num(R.tirador.totals.profit, "profit")} لتيرادور بهامش ${num(R.tirador.totals.margin, "pct")}، و${num(R.atwar.totals.profit, "profit")} لأطوار بهامش ${num(R.atwar.totals.margin, "pct")}.</p>
         <p>أعلى إنجاز كمي في قطاع ${esc(best.name)} بمعدل ${rate(best.qtyRate)}. أكبر ضغط على الربح في قطاع ${esc(worst.name)}: ${num(worst.profit, "profit")} ريال، مع إنجاز كمي ${rate(worst.qtyRate)}.</p>
-        <p class="lead">${fmtQty(idle)} صنفاً من ${fmtQty(R.meta.itemCount)} بلا أي حركة بيع في الفترة.</p>
+        <p class="lead">${fmtQty(idleItems.length)} صنفاً من ${fmtQty(R.meta.itemCount)} بلا بيع ولا مرتجع، و${fmtQty(negativeItems.length)} صنفاً بصافي كمية سالبة.</p>
       </section>
       <div class="note">
         <strong>أساس الأرقام.</strong>
@@ -261,6 +340,39 @@
     { key: "valueRate", label: "إنجاز القيمة", type: "num", html: (row) => rate(row.valueRate) },
   ];
 
+  function openingMatrix(kind) {
+    const groupOf = new Map(R.itemPerf.map((item) => [item.sku, item.group]));
+    const groups = R.groups.slice();
+    const cells = new Map();
+    R.items.forEach((item) => {
+      const group = groupOf.get(item.sku) || 0;
+      const key = `${item.sector}\0${group}`;
+      const cell = cells.get(key) || { qty: 0, value: 0 };
+      cell.qty += item.openQty || 0;
+      cell.value += item.openValue || 0;
+      cells.set(key, cell);
+    });
+    if ([...cells.keys()].some((key) => key.endsWith("\u00000") && (cells.get(key).qty || cells.get(key).value))) {
+      groups.push({ id: 0, name: "بدون مجموعة" });
+    }
+    const read = (sector, group) => {
+      const cell = cells.get(`${sector}\0${group}`);
+      return cell ? cell[kind] : 0;
+    };
+    const head = groups.map((group) => `<th class="numcol">${esc(group.name)}</th>`).join("");
+    const body = R.sectors.map((sector) => {
+      const cellsHtml = groups.map((group) => `<td class="numcol">${num(read(sector.name, group.id), kind === "qty" ? "qty" : "money")}</td>`).join("");
+      const total = groups.reduce((sum, group) => sum + read(sector.name, group.id), 0);
+      return `<tr><td class="stick">${esc(sector.name)}</td>${cellsHtml}<td class="numcol">${num(total, kind === "qty" ? "qty" : "money")}</td></tr>`;
+    }).join("");
+    const footCells = groups.map((group) => {
+      const total = R.sectors.reduce((sum, sector) => sum + read(sector.name, group.id), 0);
+      return `<td class="numcol">${num(total, kind === "qty" ? "qty" : "money")}</td>`;
+    }).join("");
+    const grand = R.sectors.reduce((sum, sector) => sum + groups.reduce((inner, group) => inner + read(sector.name, group.id), 0), 0);
+    return `<div class="table-wrap open"><table class="matrix"><thead><tr><th class="stick">القطاع</th>${head}<th class="numcol">الإجمالي</th></tr></thead><tbody>${body}</tbody><tfoot><tr><td class="stick">الإجمالي</td>${footCells}<td class="numcol">${num(grand, kind === "qty" ? "qty" : "money")}</td></tr></tfoot></table></div>`;
+  }
+
   function renderAsnaf() {
     const t = R.totals;
     const app = document.getElementById("app");
@@ -274,6 +386,18 @@
         { label: "قيمة المبيعات", html: num(t.salesValue, "money") },
         { label: "صافي الربح", html: num(t.profit, "profit"), tone: t.profit >= 0 ? "good" : "bad" },
       ])}
+      <div class="pair">
+        <section class="section">
+          <h2>الكميات الافتتاحية</h2>
+          <p class="lead">الصفوف قطاعات، والأعمدة مجموعات الرواكد.</p>
+          ${openingMatrix("qty")}
+        </section>
+        <section class="section">
+          <h2>القيم الافتتاحية</h2>
+          <p class="lead">قيمة الافتتاح بالتكلفة، بنفس تقسيم المجموعات.</p>
+          ${openingMatrix("value")}
+        </section>
+      </div>
       <section class="section">
         <h2>معدل الإنجاز حسب القطاع</h2>
         <p class="lead">طول الشريط من صفر إلى 30٪. اللون الأحمر دون 5٪، والذهبي من 5٪ إلى 15٪، والأخضر فوق 15٪.</p>
@@ -327,8 +451,8 @@
       const query = state.q.trim();
       return R.items.filter((item) => {
         if (state.sector !== "all" && item.sector !== state.sector) return false;
-        if (state.view === "moved" && !(item.netQty || item.salesValue)) return false;
-        if (state.view === "idle" && (item.netQty || item.salesValue)) return false;
+        if (state.view === "moved" && noMovement(item)) return false;
+        if (state.view === "idle" && !noMovement(item)) return false;
         if (state.view === "gain" && !(item.profit > 0)) return false;
         if (state.view === "loss" && !(item.profit < 0)) return false;
         if (!query) return true;
@@ -1289,8 +1413,8 @@
       ]);
       const bySales = regions.slice().sort((a, b) => b.salesValue - a.salesValue);
       const byCustomers = regions.slice().sort((a, b) => b.customers - a.customers);
-      document.getElementById("region-sales-bars").innerHTML = hbars(bySales, (row) => row.region, (row) => row.salesValue, (value) => num(value, "money"));
-      document.getElementById("region-customer-bars").innerHTML = hbars(byCustomers, (row) => row.region, (row) => row.customers, (value) => num(value, "qty"), null, "gold");
+      document.getElementById("region-sales-bars").innerHTML = pieChart(bySales, (row) => row.region, (row) => row.salesValue, (value) => num(value, "money"));
+      document.getElementById("region-customer-bars").innerHTML = pieChart(byCustomers, (row) => row.region, (row) => row.customers, (value) => num(value, "qty"));
       mountTable(document.getElementById("region-total"), regionColumns, regions, regionState, draw);
       document.getElementById("region-detail-section").hidden = filters.sector !== "all";
       if (filters.sector === "all") {
@@ -1326,20 +1450,34 @@
     const monthOptions = PERF_MONTHS.map(([id, label]) => `<option value="${id}">${label}</option>`).join("");
     const groupButtons = R.groups.map((group) => `<button type="button" data-group="${group.id}" aria-pressed="false">${esc(group.name)}</button>`).join("");
     const app = document.getElementById("app");
-    const state = { company: "all", group: "all", from: 7, to: 10, q: "", sort: "sales", dir: -1, page: 0 };
-    const pageSize = new URLSearchParams(location.search).has("print") ? 100000 : 40;
-    const columns = [
-      { key: "sku", label: "رقم الصنف", type: "text", stick: true, html: (row) => `<span class="sku">${esc(row.sku)}</span>` },
-      { key: "name", label: "الوصف", type: "text", clip: true, html: (row) => esc(row.name) },
-      { key: "sector", label: "القطاع", type: "text", clip: true, html: (row) => esc(row.sector) },
-      { key: "stock", label: "المخزون", type: "num", html: (row) => num(row.stock, "qty") },
-      { key: "unitCost", label: "تكلفة الحبة", type: "num", html: (row) => num(row.unitCost, "money") },
-      { key: "monthSales", label: "إجمالي المبيعات الشهرية", type: "num", html: (row) => num(row.monthSales, "money") },
-      { key: "avgPrice", label: "متوسط سعر البيع الشهري", type: "num", html: (row) => num(row.avgPrice, "money") },
-      { key: "monthProfit", label: "الربحية الشهرية", type: "num", html: (row) => num(row.monthProfit, "profit") },
-      { key: "sales", label: "إجمالي المبيعات", type: "num", html: (row) => num(row.sales, "money") },
-      { key: "margin", label: "متوسط الربحية الإجمالي", type: "num", html: (row) => num(row.margin, "pct") },
-    ];
+    const sectorOptions = R.sectors.map((row) => `<option value="${esc(row.name)}">${esc(row.name)}</option>`).join("");
+    const state = { company: "all", group: "all", sector: "all", from: 7, to: 10, q: "", sort: "sales", dir: -1 };
+    const groupColors = { 1: "#2C4C7C", 2: "#C6A36A", 3: "#8A94A3", 4: "#6E8B74", 5: "#8C6A4A" };
+
+    function selectedMonths() {
+      const months = [];
+      for (let month = state.from; month <= state.to; month += 1) months.push(month);
+      return months;
+    }
+
+    function columns() {
+      const list = [
+        { key: "sku", label: "رقم الصنف", type: "text", stick: true, html: (row) => `<span class="sku">${esc(row.sku)}</span>` },
+        { key: "name", label: "الوصف", type: "text", clip: true, html: (row) => esc(row.name) },
+        { key: "sector", label: "القطاع", type: "text", clip: true, html: (row) => esc(row.sector) },
+        { key: "stock", label: "المخزون", type: "num", html: (row) => num(row.stock, "qty") },
+        { key: "unitCost", label: "تكلفة الحبة", type: "num", html: (row) => num(row.unitCost, "money") },
+        { key: "avgPrice", label: "متوسط سعر البيع", type: "num", html: (row) => num(row.avgPrice, "money") },
+      ];
+      selectedMonths().forEach((month) => {
+        const label = monthName(month);
+        list.push({ key: `s${month}`, label: `مبيعات ${label}`, type: "num", html: (row) => num(row[`s${month}`], "money") });
+        list.push({ key: `r${month}`, label: `ربحية ${label}`, type: "num", html: (row) => num(row[`r${month}`], "pct") });
+      });
+      list.push({ key: "sales", label: "إجمالي المبيعات", type: "num", html: (row) => num(row.sales, "money") });
+      list.push({ key: "margin", label: "متوسط الربحية", type: "num", html: (row) => num(row.margin, "pct") });
+      return list;
+    }
 
     function monthName(id) {
       return PERF_MONTHS.find(([month]) => month === id)[1];
@@ -1357,55 +1495,100 @@
     }
 
     function rows() {
-      const months = [];
-      for (let month = state.from; month <= state.to; month += 1) months.push(month);
-      const span = months.length;
+      const months = selectedMonths();
       const companies = state.company === "all" ? ["atwar", "tirador"] : [state.company];
       const query = state.q.trim();
       return R.itemPerf.filter((item) => {
         if (state.group !== "all" && String(item.group) !== String(state.group)) return false;
+        if (state.sector !== "all" && item.sector !== state.sector) return false;
         if (!query) return true;
         return `${item.sku} ${item.name} ${item.sector}`.includes(query);
       }).map((item) => {
         let qty = 0;
         let sales = 0;
+        let profit = 0;
         let stock = 0;
-        if (companies.includes("atwar")) stock += item.stock[0] || 0;
-        if (companies.includes("tirador")) stock += item.stock[1] || 0;
-        companies.forEach((company) => {
-          months.forEach((month) => {
-            const cell = item[company][month - 7];
-            qty += cell[0];
-            sales += cell[1];
-          });
-        });
-        const profit = sales - qty * item.unitCost;
-        return {
+        const row = {
           sku: item.sku,
           name: item.name,
           sector: item.sector,
-          stock,
           unitCost: item.unitCost,
-          monthSales: sales / span,
-          avgPrice: Math.abs(qty) > 1e-6 ? sales / qty : null,
-          monthProfit: profit / span,
-          sales,
-          margin: Math.abs(sales) > 0.005 ? profit / sales : null,
         };
+        if (companies.includes("atwar")) stock += item.stock[0] || 0;
+        if (companies.includes("tirador")) stock += item.stock[1] || 0;
+        months.forEach((month) => {
+          let monthQty = 0;
+          let monthSales = 0;
+          companies.forEach((company) => {
+            const cell = item[company][month - 7];
+            monthQty += cell[0];
+            monthSales += cell[1];
+          });
+          const monthProfit = monthSales - monthQty * item.unitCost;
+          row[`s${month}`] = monthSales;
+          row[`r${month}`] = Math.abs(monthSales) > 0.005 ? monthProfit / monthSales : null;
+          qty += monthQty;
+          sales += monthSales;
+          profit += monthProfit;
+        });
+        row.stock = stock;
+        row.avgPrice = Math.abs(qty) > 1e-6 ? sales / qty : null;
+        row.sales = sales;
+        row.profit = profit;
+        row.margin = Math.abs(sales) > 0.005 ? profit / sales : null;
+        return row;
       });
+    }
+
+    function stackChart() {
+      const months = selectedMonths();
+      const companies = state.company === "all" ? ["atwar", "tirador"] : [state.company];
+      const bySector = new Map();
+      R.itemPerf.forEach((item) => {
+        if (state.group !== "all" && String(item.group) !== String(state.group)) return;
+        if (state.sector !== "all" && item.sector !== state.sector) return;
+        let qty = 0;
+        months.forEach((month) => {
+          companies.forEach((company) => {
+            qty += item[company][month - 7][0];
+          });
+        });
+        if (!bySector.has(item.sector)) bySector.set(item.sector, {});
+        const bucket = bySector.get(item.sector);
+        bucket[item.group] = (bucket[item.group] || 0) + qty;
+      });
+      const bars = [...bySector.entries()].map(([name, groups]) => {
+        const total = Object.values(groups).reduce((sum, value) => sum + value, 0);
+        return { name, groups, total };
+      }).filter((bar) => Math.abs(bar.total) > 1e-6).sort((a, b) => b.total - a.total);
+      if (!bars.length) return `<p class="lead">لا توجد كمية مباعة لهذا الاختيار.</p>`;
+      const max = Math.max(...bars.map((bar) => bar.total));
+      const rowsHtml = bars.map((bar) => {
+        const segments = R.groups.map((group) => {
+          const qty = bar.groups[group.id] || 0;
+          if (Math.abs(qty) < 1e-6) return "";
+          return `<span class="stack-seg" style="flex:${qty.toFixed(4)} 1 0;background:${groupColors[group.id]}" title="${esc(group.name)}"></span>`;
+        }).join("");
+        const width = (bar.total / max) * 100;
+        return `<div class="stack-row"><div class="stack-name">${esc(bar.name)}</div><div class="stack-track"><div class="stack-bar" style="width:${width.toFixed(2)}%">${segments}</div></div><div class="stack-val">${num(bar.total, "qty")}</div></div>`;
+      }).join("");
+      const legend = R.groups.map((group) => `<span class="legend-item"><span class="swatch" style="background:${groupColors[group.id]}"></span>${esc(group.name)}</span>`).join("");
+      return `<div class="stack-legend">${legend}</div><div class="stack">${rowsHtml}</div>`;
     }
 
     function draw() {
       const view = rows();
-      const sorted = sortRows(view, columns, state.sort, state.dir);
-      const pages = Math.max(1, Math.ceil(sorted.length / pageSize));
-      if (state.page >= pages) state.page = 0;
-      const slice = sorted.slice(state.page * pageSize, state.page * pageSize + pageSize);
+      const tableColumns = columns();
+      if (!tableColumns.some((column) => column.key === state.sort)) state.sort = "sales";
+      const sorted = sortRows(view, tableColumns, state.sort, state.dir);
       const sales = view.reduce((sum, row) => sum + row.sales, 0);
-      const profit = view.reduce((sum, row) => sum + row.monthProfit * (state.to - state.from + 1), 0);
+      const profit = view.reduce((sum, row) => sum + row.profit, 0);
       const stock = view.reduce((sum, row) => sum + row.stock, 0);
+      document.getElementById("perf-stack").innerHTML = stackChart();
       const host = document.getElementById("perf-table");
-      host.innerHTML = tableHtml(columns, slice, state.sort, state.dir);
+      host.innerHTML = tableHtml(tableColumns, sorted, state.sort, state.dir);
+      const wrap = host.querySelector(".table-wrap");
+      if (wrap) wrap.classList.add("open");
       host.querySelectorAll("th[data-k]").forEach((th) => {
         const activate = () => {
           const key = th.dataset.k;
@@ -1415,7 +1598,6 @@
             state.sort = key;
             state.dir = type === "text" ? 1 : -1;
           }
-          state.page = 0;
           draw();
         };
         th.addEventListener("click", activate);
@@ -1434,15 +1616,9 @@
         { label: "متوسط الربحية", html: num(Math.abs(sales) > 0.005 ? profit / sales : null, "pct"), tone: "gold" },
         { label: "أشهر الفترة", html: num(state.to - state.from + 1, "qty"), note: `${monthName(state.from)} إلى ${monthName(state.to)}` },
       ]);
-      document.getElementById("perf-banner").textContent = `التصفية المطبقة: ${companyName()}، ${groupName()}، من ${monthName(state.from)} إلى ${monthName(state.to)}.`;
+      const sectorLabel = state.sector === "all" ? "كل القطاعات" : state.sector;
+      document.getElementById("perf-banner").textContent = `التصفية المطبقة: ${companyName()}، ${groupName()}، ${sectorLabel}، من ${monthName(state.from)} إلى ${monthName(state.to)}.`;
       document.getElementById("perf-meta").innerHTML = `المعروض ${num(view.length, "qty")} صنفاً.`;
-      const pager = document.getElementById("perf-pager");
-      pager.innerHTML = `
-        <button type="button" id="perf-prev" ${state.page === 0 ? "disabled" : ""}>السابق</button>
-        <span>صفحة ${state.page + 1} من ${pages}</span>
-        <button type="button" id="perf-next" ${state.page >= pages - 1 ? "disabled" : ""}>التالي</button>`;
-      document.getElementById("perf-prev").addEventListener("click", () => { state.page -= 1; draw(); });
-      document.getElementById("perf-next").addEventListener("click", () => { state.page += 1; draw(); });
     }
 
     app.innerHTML = `
@@ -1458,6 +1634,9 @@
               <option value="tirador">تيرادور</option>
             </select>
           </label>
+          <label class="field">القطاع
+            <select id="perf-sector"><option value="all">كل القطاعات</option>${sectorOptions}</select>
+          </label>
           <label class="field">من شهر
             <select id="perf-from">${monthOptions}</select>
           </label>
@@ -1472,16 +1651,20 @@
           <button type="button" data-group="all" aria-pressed="true">كل المجموعات</button>
           ${groupButtons}
         </div>
+        <h2 class="chart-title">الكمية المباعة حسب القطاع والمجموعة</h2>
+        <div id="perf-stack"></div>
         <p class="meta-line" id="perf-meta"></p>
-        <p class="scroll-hint">انقر عنوان العمود للترتيب.</p>
+        <p class="scroll-hint">انقر عنوان العمود للترتيب. الجدول يعرض كل الصفوف المطابقة.</p>
         <div id="perf-table"></div>
-        <div class="pager" id="perf-pager"></div>
       </section>`;
 
     document.getElementById("perf-to").value = "10";
     document.getElementById("perf-company").addEventListener("change", (event) => {
       state.company = event.target.value;
-      state.page = 0;
+      draw();
+    });
+    document.getElementById("perf-sector").addEventListener("change", (event) => {
+      state.sector = event.target.value;
       draw();
     });
     document.getElementById("perf-from").addEventListener("change", (event) => {
@@ -1490,7 +1673,6 @@
         state.to = state.from;
         document.getElementById("perf-to").value = String(state.to);
       }
-      state.page = 0;
       draw();
     });
     document.getElementById("perf-to").addEventListener("change", (event) => {
@@ -1499,20 +1681,414 @@
         state.from = state.to;
         document.getElementById("perf-from").value = String(state.from);
       }
-      state.page = 0;
       draw();
     });
     document.getElementById("perf-q").addEventListener("input", (event) => {
       state.q = event.target.value;
-      state.page = 0;
       draw();
     });
     document.getElementById("perf-groups").addEventListener("click", (event) => {
       const button = event.target.closest("button");
       if (!button) return;
       state.group = button.dataset.group;
-      state.page = 0;
       document.querySelectorAll("#perf-groups button").forEach((item) => {
+        item.setAttribute("aria-pressed", item === button ? "true" : "false");
+      });
+      draw();
+    });
+    draw();
+  }
+
+  function negativeQty(item) {
+    return item.netQty < -1e-6;
+  }
+
+  function noMovement(item) {
+    return Math.abs(item.grossQty) < 1e-6 && Math.abs(item.returns) < 1e-6;
+  }
+
+  function renderMovementList() {
+    const negative = PAGE === "salb";
+    const groupName = new Map(R.groups.map((group) => [group.id, group.name]));
+    const groupOf = new Map(R.itemPerf.map((item) => [item.sku, item.group]));
+    const source = R.items.filter(negative ? negativeQty : noMovement).map((item) => ({
+      ...item,
+      groupName: groupName.get(groupOf.get(item.sku)) || "—",
+    }));
+    const columns = [
+      { key: "sector", label: "القطاع", type: "text", stick: true, html: (row) => esc(row.sector) },
+      { key: "sku", label: "رقم الصنف", type: "text", html: (row) => `<span class="sku">${esc(row.sku)}</span>` },
+      { key: "name", label: "الوصف", type: "text", clip: true, html: (row) => esc(row.name) },
+      { key: "groupName", label: "المجموعة", type: "text", html: (row) => esc(row.groupName) },
+      { key: "openQty", label: "كمية الافتتاح", type: "num", html: (row) => num(row.openQty, "qty") },
+      { key: "openValue", label: "قيمة الافتتاح", type: "num", html: (row) => num(row.openValue, "money") },
+    ];
+    if (negative) {
+      columns.push(
+        { key: "grossQty", label: "الكمية المباعة", type: "num", html: (row) => num(row.grossQty, "qty") },
+        { key: "returns", label: "المرتجعات", type: "num", html: (row) => num(row.returns, "qty") },
+        { key: "netQty", label: "صافي الكمية", type: "num", html: (row) => num(row.netQty, "qty") },
+        { key: "salesValue", label: "قيمة المبيعات", type: "num", html: (row) => num(row.salesValue, "money") },
+        { key: "profit", label: "صافي الربح", type: "num", html: (row) => num(row.profit, "profit") },
+      );
+    }
+    const sectorColumns = [
+      { key: "name", label: "القطاع", type: "text", stick: true, clip: true, html: (row) => esc(row.name) },
+      { key: "count", label: "الأصناف", type: "num", html: (row) => num(row.count, "qty") },
+      { key: "openQty", label: "كمية الافتتاح", type: "num", html: (row) => num(row.openQty, "qty") },
+      { key: "openValue", label: "قيمة الافتتاح", type: "num", html: (row) => num(row.openValue, "money") },
+    ];
+    if (negative) {
+      sectorColumns.push(
+        { key: "netQty", label: "صافي الكمية", type: "num", html: (row) => num(row.netQty, "qty") },
+        { key: "salesValue", label: "قيمة المبيعات", type: "num", html: (row) => num(row.salesValue, "money") },
+        { key: "profit", label: "صافي الربح", type: "num", html: (row) => num(row.profit, "profit") },
+      );
+    }
+    const options = R.sectors.map((row) => `<option value="${esc(row.name)}">${esc(row.name)}</option>`).join("");
+    const groupButtons = R.groups.map((group) => `<button type="button" data-group="${group.id}" aria-pressed="false">${esc(group.name)}</button>`).join("");
+    const app = document.getElementById("app");
+    const state = {
+      q: "",
+      sector: "all",
+      group: "all",
+      sort: negative ? "netQty" : "openValue",
+      dir: negative ? 1 : -1,
+      sectorSort: "openValue",
+      sectorDir: -1,
+    };
+
+    function selected() {
+      const query = state.q.trim();
+      return source.filter((item) => {
+        if (state.sector !== "all" && item.sector !== state.sector) return false;
+        if (state.group !== "all" && String(groupOf.get(item.sku)) !== String(state.group)) return false;
+        if (!query) return true;
+        return `${item.sector} ${item.sku} ${item.name} ${item.groupName}`.includes(query);
+      });
+    }
+
+    function sectorRows(rows) {
+      const map = new Map();
+      rows.forEach((item) => {
+        const row = map.get(item.sector) || { name: item.sector, count: 0, openQty: 0, openValue: 0, netQty: 0, salesValue: 0, profit: 0 };
+        row.count += 1;
+        row.openQty += item.openQty || 0;
+        row.openValue += item.openValue || 0;
+        row.netQty += item.netQty || 0;
+        row.salesValue += item.salesValue || 0;
+        row.profit += item.profit || 0;
+        map.set(item.sector, row);
+      });
+      return [...map.values()];
+    }
+
+    function draw() {
+      const rows = selected();
+      const sorted = sortRows(rows, columns, state.sort, state.dir);
+      const openQty = rows.reduce((sum, row) => sum + (row.openQty || 0), 0);
+      const openValue = rows.reduce((sum, row) => sum + (row.openValue || 0), 0);
+      const netQty = rows.reduce((sum, row) => sum + (row.netQty || 0), 0);
+      const salesValue = rows.reduce((sum, row) => sum + (row.salesValue || 0), 0);
+      const profit = rows.reduce((sum, row) => sum + (row.profit || 0), 0);
+      const sectors = sectorRows(rows);
+      const cards = negative
+        ? [
+          { label: "الأصناف", html: num(rows.length, "qty") },
+          { label: "صافي الكمية", html: num(netQty, "qty"), tone: "bad" },
+          { label: "قيمة المبيعات", html: num(salesValue, "money") },
+          { label: "صافي الربح", html: num(profit, "profit"), tone: profit >= 0 ? "good" : "bad" },
+          { label: "قيمة الافتتاح", html: num(openValue, "money") },
+          { label: "القطاعات", html: num(sectors.length, "qty") },
+        ]
+        : [
+          { label: "الأصناف", html: num(rows.length, "qty") },
+          { label: "كمية الافتتاح", html: num(openQty, "qty") },
+          { label: "قيمة الافتتاح", html: num(openValue, "money") },
+          { label: "حصة الأصناف", html: rate(R.meta.itemCount ? rows.length / R.meta.itemCount : null) },
+          { label: "حصة قيمة الافتتاح", html: rate(R.totals.openValue ? openValue / R.totals.openValue : null) },
+          { label: "القطاعات", html: num(sectors.length, "qty") },
+        ];
+      document.getElementById("move-kpis").innerHTML = kpis(cards);
+      const sectorHost = document.getElementById("move-sectors");
+      sectorHost.innerHTML = sectors.length
+        ? tableHtml(sectorColumns, sortRows(sectors, sectorColumns, state.sectorSort, state.sectorDir), state.sectorSort, state.sectorDir)
+        : `<p class="lead">لا توجد أصناف لهذا الاختيار.</p>`;
+      sectorHost.querySelectorAll("th[data-k]").forEach((th) => {
+        th.addEventListener("click", () => {
+          const key = th.dataset.k;
+          if (state.sectorSort === key) state.sectorDir *= -1;
+          else {
+            state.sectorSort = key;
+            state.sectorDir = th.dataset.t === "text" ? 1 : -1;
+          }
+          draw();
+        });
+      });
+      const host = document.getElementById("move-items");
+      host.innerHTML = sorted.length ? tableHtml(columns, sorted, state.sort, state.dir) : `<p class="lead">لا توجد أصناف لهذا الاختيار.</p>`;
+      const wrap = host.querySelector(".table-wrap");
+      if (wrap) wrap.classList.add("open");
+      host.querySelectorAll("th[data-k]").forEach((th) => {
+        const activate = () => {
+          const key = th.dataset.k;
+          if (state.sort === key) state.dir *= -1;
+          else {
+            state.sort = key;
+            state.dir = th.dataset.t === "text" ? 1 : -1;
+          }
+          draw();
+        };
+        th.addEventListener("click", activate);
+        th.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            activate();
+          }
+        });
+      });
+      document.getElementById("move-meta").textContent = `المعروض ${rows.length.toLocaleString("en-US")} صنفاً.`;
+    }
+
+    app.innerHTML = `
+      <div id="move-kpis"></div>
+      <section class="section">
+        <h2>${negative ? "الأصناف ذات الكمية السالبة" : "الأصناف بلا حركة"}</h2>
+        <div class="toolbar">
+          <label class="field">بحث
+            <input id="move-q" type="search" placeholder="رقم الصنف أو وصفه أو قطاعه">
+          </label>
+          <label class="field">القطاع
+            <select id="move-sector"><option value="all">كل القطاعات</option>${options}</select>
+          </label>
+        </div>
+        <div class="chips" id="move-groups">
+          <button type="button" data-group="all" aria-pressed="true">كل المجموعات</button>
+          ${groupButtons}
+        </div>
+        <h2 class="chart-title">حسب القطاع</h2>
+        <div id="move-sectors"></div>
+        <p class="meta-line" id="move-meta"></p>
+        <p class="scroll-hint">انقر عنوان العمود للترتيب. الجدول يعرض كل الصفوف المطابقة.</p>
+        <div id="move-items"></div>
+      </section>`;
+    document.getElementById("move-q").addEventListener("input", (event) => {
+      state.q = event.target.value;
+      draw();
+    });
+    document.getElementById("move-sector").addEventListener("change", (event) => {
+      state.sector = event.target.value;
+      draw();
+    });
+    document.getElementById("move-groups").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      state.group = button.dataset.group;
+      document.querySelectorAll("#move-groups button").forEach((item) => {
+        item.setAttribute("aria-pressed", item === button ? "true" : "false");
+      });
+      draw();
+    });
+    draw();
+  }
+
+  function changeRate(current, previous) {
+    if (!finite(previous) || Math.abs(previous) < 1e-9) return null;
+    return (current - previous) / Math.abs(previous);
+  }
+
+  function paceDefault(list) {
+    let index = list.length - 1;
+    while (index > 1 && list[index].partial) index -= 1;
+    return Math.max(index, 1);
+  }
+
+  function renderPace() {
+    const app = document.getElementById("app");
+    const state = { mode: "week", index: paceDefault(R.pace.weeks), company: "all", sort: "dSales", dir: -1 };
+    const companies = [
+      ["all", "الكل"],
+      ["atwar", "أطوار"],
+      ["tirador", "تيرادور"],
+    ];
+
+    function periods() {
+      return state.mode === "week" ? R.pace.weeks : R.pace.months;
+    }
+
+    function deltaCell(value, pct, kind) {
+      const amount = kind === "qty" ? num(value, "deltaQty") : num(value, "profit");
+      return `${amount}<span class="delta-sub">${num(pct, "deltaPct")}</span>`;
+    }
+
+    function compareRow(name, current, previous) {
+      return {
+        name,
+        prevQty: previous.qty,
+        qty: current.qty,
+        dQty: current.qty - previous.qty,
+        pQty: changeRate(current.qty, previous.qty),
+        prevSales: previous.sales,
+        sales: current.sales,
+        dSales: current.sales - previous.sales,
+        pSales: changeRate(current.sales, previous.sales),
+        prevProfit: previous.profit,
+        profit: current.profit,
+        dProfit: current.profit - previous.profit,
+        pProfit: changeRate(current.profit, previous.profit),
+      };
+    }
+
+    function sectorRows(current, previous) {
+      const now = new Map(current.sectors.map((row) => [row.name, row]));
+      const then = new Map(previous.sectors.map((row) => [row.name, row]));
+      const names = [];
+      R.sectors.forEach((sector) => {
+        if (now.has(sector.name) || then.has(sector.name)) names.push(sector.name);
+      });
+      now.forEach((_, name) => {
+        if (!names.includes(name)) names.push(name);
+      });
+      then.forEach((_, name) => {
+        if (!names.includes(name)) names.push(name);
+      });
+      const empty = { qty: 0, sales: 0, profit: 0 };
+      return names.map((name) => compareRow(name, now.get(name) || empty, then.get(name) || empty));
+    }
+
+    const columns = [
+      { key: "name", label: "البيان", type: "text", stick: true, clip: true, html: (row) => esc(row.name) },
+      { key: "prevQty", label: "كمية سابقة", type: "num", html: (row) => num(row.prevQty, "qty") },
+      { key: "qty", label: "كمية حالية", type: "num", html: (row) => num(row.qty, "qty") },
+      { key: "dQty", label: "تغير الكمية", type: "num", html: (row) => deltaCell(row.dQty, row.pQty, "qty") },
+      { key: "prevSales", label: "مبيعات سابقة", type: "num", html: (row) => num(row.prevSales, "money") },
+      { key: "sales", label: "مبيعات حالية", type: "num", html: (row) => num(row.sales, "money") },
+      { key: "dSales", label: "تغير المبيعات", type: "num", html: (row) => deltaCell(row.dSales, row.pSales, "money") },
+      { key: "prevProfit", label: "ربح سابق", type: "num", html: (row) => num(row.prevProfit, "profit") },
+      { key: "profit", label: "ربح حالي", type: "num", html: (row) => num(row.profit, "profit") },
+      { key: "dProfit", label: "تغير الربح", type: "num", html: (row) => deltaCell(row.dProfit, row.pProfit, "money") },
+    ];
+
+    function bindSort(host, keyName, dirName) {
+      host.querySelectorAll("th[data-k]").forEach((th) => {
+        const activate = () => {
+          const key = th.dataset.k;
+          if (state[keyName] === key) state[dirName] *= -1;
+          else {
+            state[keyName] = key;
+            state[dirName] = th.dataset.t === "text" ? 1 : -1;
+          }
+          draw();
+        };
+        th.addEventListener("click", activate);
+        th.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            activate();
+          }
+        });
+      });
+    }
+
+    function draw() {
+      const list = periods();
+      if (state.index >= list.length) state.index = paceDefault(list);
+      const current = list[state.index];
+      const previous = list[state.index - 1];
+      const now = current[state.company];
+      const then = previous[state.company];
+      const qtyChange = now.qty - then.qty;
+      const salesChange = now.sales - then.sales;
+      const profitChange = now.profit - then.profit;
+      document.getElementById("pace-kpis").innerHTML = kpis([
+        { label: "الكمية الحالية", html: num(now.qty, "qty"), note: `السابق ${fmtQty(then.qty)}` },
+        { label: "تغير الكمية", html: num(qtyChange, "deltaQty"), note: num(changeRate(now.qty, then.qty), "deltaPct") },
+        { label: "المبيعات الحالية", html: num(now.sales, "money"), note: `السابق ${fmtMoney(then.sales)}` },
+        { label: "تغير المبيعات", html: num(salesChange, "profit"), note: num(changeRate(now.sales, then.sales), "deltaPct") },
+        { label: "الربح الحالي", html: num(now.profit, "profit"), tone: now.profit >= 0 ? "good" : "bad", note: `السابق ${fmtMoney(then.profit)}` },
+        { label: "تغير الربح", html: num(profitChange, "profit"), note: num(changeRate(now.profit, then.profit), "deltaPct") },
+      ]);
+      const partials = [previous, current].filter((period) => period.partial);
+      const banner = document.getElementById("pace-banner");
+      if (partials.length) {
+        banner.hidden = false;
+        const detail = partials.map((period) => `${period.label} يغطي ${fmtQty(period.days)} أيام داخل الفترة`).join("، و");
+        banner.textContent = `المقارنة ليست على عدد أيام متساوٍ: ${detail}.`;
+      } else banner.hidden = true;
+      document.getElementById("pace-caption").textContent = `${current.label} مقابل ${previous.label}.`;
+      const companyColumns = columns.map((col, index) => ({ ...col, label: index === 0 ? "الشركة" : col.label, nosort: true }));
+      const sectorColumns = columns.map((col, index) => (index === 0 ? { ...col, label: "القطاع" } : col));
+      const companyRows = [
+        compareRow("أطوار", current.atwar, previous.atwar),
+        compareRow("تيرادور", current.tirador, previous.tirador),
+        compareRow("الإجمالي", current.all, previous.all),
+      ];
+      document.getElementById("pace-companies").innerHTML = tableHtml(companyColumns, companyRows, "", 1);
+      const sectorHost = document.getElementById("pace-sectors");
+      const sectors = sortRows(sectorRows(now, then), sectorColumns, state.sort, state.dir);
+      sectorHost.innerHTML = sectors.length ? tableHtml(sectorColumns, sectors, state.sort, state.dir) : `<p class="lead">لا توجد حركة لهذا الاختيار.</p>`;
+      bindSort(sectorHost, "sort", "dir");
+    }
+
+    function fillPeriods() {
+      const list = periods();
+      const select = document.getElementById("pace-period");
+      select.innerHTML = list.map((period, index) => {
+        if (index === 0) return "";
+        const mark = period.partial ? " (جزئي)" : "";
+        return `<option value="${index}">${esc(period.label)}${mark} مقابل ${esc(list[index - 1].label)}</option>`;
+      }).join("");
+      if (state.index < 1 || state.index >= list.length) state.index = paceDefault(list);
+      select.value = String(state.index);
+    }
+
+    app.innerHTML = `
+      <div id="pace-kpis"></div>
+      <p id="pace-banner" class="note" hidden></p>
+      <section class="section">
+        <h2>مقارنة الفترة بالتي تسبقها</h2>
+        <p class="lead">الأسبوع من السبت إلى الجمعة. الشهر يقارن بالشهر السابق داخل الفترة، من أغسطس مقابل يوليو حتى أكتوبر مقابل سبتمبر.</p>
+        <div class="toolbar">
+          <div class="switch" id="pace-mode">
+            <button type="button" data-mode="week" aria-pressed="true">أسبوع</button>
+            <button type="button" data-mode="month" aria-pressed="false">شهر</button>
+          </div>
+          <label class="field">الفترة
+            <select id="pace-period"></select>
+          </label>
+          <div class="chips" id="pace-company">
+            ${companies.map(([id, label]) => `<button type="button" data-company="${id}" aria-pressed="${id === "all" ? "true" : "false"}">${label}</button>`).join("")}
+          </div>
+        </div>
+        <p class="meta-line" id="pace-caption"></p>
+        <h2 class="chart-title">الشركتان</h2>
+        <div id="pace-companies"></div>
+        <h2 class="chart-title">القطاعات</h2>
+        <p class="scroll-hint">انقر عنوان العمود للترتيب. النسبة تحت الفرق هي التغير عن الفترة السابقة.</p>
+        <div id="pace-sectors"></div>
+      </section>`;
+
+    fillPeriods();
+    document.getElementById("pace-mode").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      state.mode = button.dataset.mode;
+      state.index = paceDefault(periods());
+      document.querySelectorAll("#pace-mode button").forEach((item) => {
+        item.setAttribute("aria-pressed", item === button ? "true" : "false");
+      });
+      fillPeriods();
+      draw();
+    });
+    document.getElementById("pace-period").addEventListener("change", (event) => {
+      state.index = Number(event.target.value);
+      draw();
+    });
+    document.getElementById("pace-company").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      state.company = button.dataset.company;
+      document.querySelectorAll("#pace-company button").forEach((item) => {
         item.setAttribute("aria-pressed", item === button ? "true" : "false");
       });
       draw();
@@ -1531,6 +2107,9 @@
     tsec: renderBranchSectors,
     areg: renderAtwarRegions,
     ada: renderItemPerf,
+    salb: renderMovementList,
+    sifr: renderMovementList,
+    pace: renderPace,
   };
   pages[PAGE]();
 })();
