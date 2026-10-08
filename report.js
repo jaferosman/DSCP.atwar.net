@@ -2123,6 +2123,15 @@
       return Math.abs(qty) > 1e-6 ? amount / qty : null;
     }
 
+    function margin(amount, qty, unitCost) {
+      if (Math.abs(amount) <= 0.005) return null;
+      return (amount - qty * unitCost) / amount;
+    }
+
+    function qtyCell(qty, amount, unitCost) {
+      return `${num(qty, "qty")}<span class="qty-meta">السعر ${num(price(amount, qty), "money")}</span><span class="qty-meta">الهامش ${num(margin(amount, qty, unitCost), "deltaPct")}</span>`;
+    }
+
     function ageText(value) {
       if (!finite(value)) return num(null, "qty");
       return `<span class="num">${value.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>`;
@@ -2136,16 +2145,24 @@
       ];
       selectedMonths().forEach((month) => {
         const label = monthName(month);
-        list.push({ key: `as${month}`, label: `مبيعات أطوار ${label}`, type: "num", html: (row) => num(row[`as${month}`], "money") });
-        list.push({ key: `ap${month}`, label: `سعر أطوار ${label}`, type: "num", html: (row) => num(row[`ap${month}`], "money") });
+        list.push({
+          key: `aq${month}`,
+          label,
+          type: "num",
+          html: (row) => qtyCell(row[`aq${month}`], row[`as${month}`], row.unitCost),
+        });
       });
       list.push({ key: "tiradorStock", label: "مخزون تيرادور", type: "num", html: (row) => num(row.tiradorStock, "qty") });
       selectedMonths().forEach((month) => {
         const label = monthName(month);
-        list.push({ key: `ts${month}`, label: `مبيعات تيرادور ${label}`, type: "num", html: (row) => num(row[`ts${month}`], "money") });
-        list.push({ key: `tp${month}`, label: `سعر تيرادور ${label}`, type: "num", html: (row) => num(row[`tp${month}`], "money") });
+        list.push({
+          key: `tq${month}`,
+          label,
+          type: "num",
+          html: (row) => qtyCell(row[`tq${month}`], row[`ts${month}`], row.unitCost),
+        });
       });
-      list.push({ key: "qty", label: "إجمالي الكمية المباعة", type: "num", html: (row) => num(row.qty, "qty") });
+      list.push({ key: "qty", label: "إجمالي الكمية المباعة", type: "num", html: (row) => qtyCell(row.qty, row.sales, row.unitCost) });
       list.push({ key: "age", label: "عمر المخزون", type: "num", html: (row) => ageText(row.age) });
       return list;
     }
@@ -2161,6 +2178,7 @@
         const row = {
           sku: item.sku,
           name: item.name,
+          unitCost: item.unitCost,
           atwarStock: item.stock[0] || 0,
           tiradorStock: item.stock[1] || 0,
           qty: 0,
@@ -2169,10 +2187,10 @@
         months.forEach((month) => {
           const atwar = item.atwar[month - 7];
           const tirador = item.tirador[month - 7];
+          row[`aq${month}`] = atwar[0];
           row[`as${month}`] = atwar[1];
-          row[`ap${month}`] = price(atwar[1], atwar[0]);
+          row[`tq${month}`] = tirador[0];
           row[`ts${month}`] = tirador[1];
-          row[`tp${month}`] = price(tirador[1], tirador[0]);
           row.qty += atwar[0] + tirador[0];
           sales += atwar[1] + tirador[1];
         });
@@ -2254,7 +2272,7 @@
           ${groupButtons}
         </div>
         <p class="meta-line" id="tahlil-meta"></p>
-        <p class="scroll-hint">انقر عنوان العمود للترتيب. الجدول يعرض كل الصفوف المطابقة.</p>
+        <p class="scroll-hint">تحت كل كمية يظهر متوسط سعر البيع ثم هامش الربح. انقر عنوان العمود للترتيب.</p>
         <div id="tahlil-table"></div>
       </section>`;
 

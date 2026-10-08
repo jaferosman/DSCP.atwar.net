@@ -528,6 +528,7 @@ tbody tr:hover td.stick { background: #dde4ee; }
 .matrix td.stick, .matrix th.stick { min-width: 8.5rem; }
 
 .delta-sub { display: block; margin-top: 0.12rem; font-size: 0.75rem; }
+.qty-meta { display: block; margin-top: 0.12rem; color: var(--muted); font-size: 0.75rem; line-height: 1.35; }
 
 .mini {
   width: 100%;
