@@ -14,6 +14,7 @@
     ["asnaf-salb.html", "salb", "كمية سالبة"],
     ["asnaf-sifr.html", "sifr", "حركة صفرية"],
     ["tatawor.html", "pace", "تطور الأداء"],
+    ["tahlil.html", "tahlil", "تحليل الأداء"],
   ];
 
   function esc(value) {
@@ -290,6 +291,11 @@
           <span class="card-n">11</span>
           <div><h2>تطور الأداء</h2><p>مقارنة أسبوع بالأسبوع الذي يسبقه، وشهر بالشهر الذي يسبقه.</p></div>
           <div class="card-stat"><strong class="num">${num((R.pace.weeks.at(-1).all.sales - R.pace.weeks.at(-2).all.sales) / Math.abs(R.pace.weeks.at(-2).all.sales), "deltaPct")}</strong><span>مبيعات آخر أسبوع</span></div>
+        </a>
+        <a class="card" href="tahlil.html">
+          <span class="card-n">12</span>
+          <div><h2>تحليل الأداء</h2><p>مخزون كل شركة ومبيعاتها الشهرية وسعر البيع، وعمر المخزون المتبقي.</p></div>
+          <div class="card-stat"><strong class="num">${fmtQty(R.meta.itemCount)}</strong><span>صنف</span></div>
         </a>
       </div>
       <section class="section" style="margin-top:1rem">
@@ -2096,6 +2102,195 @@
     draw();
   }
 
+  function renderTahlil() {
+    const monthOptions = PERF_MONTHS.map(([id, label]) => `<option value="${id}">${label}</option>`).join("");
+    const groupButtons = R.groups.map((group) => `<button type="button" data-group="${group.id}" aria-pressed="false">${esc(group.name)}</button>`).join("");
+    const sectorOptions = R.sectors.map((row) => `<option value="${esc(row.name)}">${esc(row.name)}</option>`).join("");
+    const app = document.getElementById("app");
+    const state = { sector: "all", group: "all", from: 7, to: 10, sort: "age", dir: -1 };
+
+    function selectedMonths() {
+      const months = [];
+      for (let month = state.from; month <= state.to; month += 1) months.push(month);
+      return months;
+    }
+
+    function monthName(id) {
+      return PERF_MONTHS.find(([month]) => month === id)[1];
+    }
+
+    function price(amount, qty) {
+      return Math.abs(qty) > 1e-6 ? amount / qty : null;
+    }
+
+    function ageText(value) {
+      if (!finite(value)) return num(null, "qty");
+      return `<span class="num">${value.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>`;
+    }
+
+    function columns() {
+      const list = [
+        { key: "sku", label: "رقم الصنف", type: "text", stick: true, html: (row) => `<span class="sku">${esc(row.sku)}</span>` },
+        { key: "name", label: "الوصف", type: "text", clip: true, html: (row) => esc(row.name) },
+        { key: "atwarStock", label: "مخزون أطوار", type: "num", html: (row) => num(row.atwarStock, "qty") },
+      ];
+      selectedMonths().forEach((month) => {
+        const label = monthName(month);
+        list.push({ key: `as${month}`, label: `مبيعات أطوار ${label}`, type: "num", html: (row) => num(row[`as${month}`], "money") });
+        list.push({ key: `ap${month}`, label: `سعر أطوار ${label}`, type: "num", html: (row) => num(row[`ap${month}`], "money") });
+      });
+      list.push({ key: "tiradorStock", label: "مخزون تيرادور", type: "num", html: (row) => num(row.tiradorStock, "qty") });
+      selectedMonths().forEach((month) => {
+        const label = monthName(month);
+        list.push({ key: `ts${month}`, label: `مبيعات تيرادور ${label}`, type: "num", html: (row) => num(row[`ts${month}`], "money") });
+        list.push({ key: `tp${month}`, label: `سعر تيرادور ${label}`, type: "num", html: (row) => num(row[`tp${month}`], "money") });
+      });
+      list.push({ key: "qty", label: "إجمالي الكمية المباعة", type: "num", html: (row) => num(row.qty, "qty") });
+      list.push({ key: "age", label: "عمر المخزون", type: "num", html: (row) => ageText(row.age) });
+      return list;
+    }
+
+    function rows() {
+      const months = selectedMonths();
+      const span = months.length;
+      return R.itemPerf.filter((item) => {
+        if (state.group !== "all" && String(item.group) !== String(state.group)) return false;
+        if (state.sector !== "all" && item.sector !== state.sector) return false;
+        return true;
+      }).map((item) => {
+        const row = {
+          sku: item.sku,
+          name: item.name,
+          atwarStock: item.stock[0] || 0,
+          tiradorStock: item.stock[1] || 0,
+          qty: 0,
+        };
+        let sales = 0;
+        months.forEach((month) => {
+          const atwar = item.atwar[month - 7];
+          const tirador = item.tirador[month - 7];
+          row[`as${month}`] = atwar[1];
+          row[`ap${month}`] = price(atwar[1], atwar[0]);
+          row[`ts${month}`] = tirador[1];
+          row[`tp${month}`] = price(tirador[1], tirador[0]);
+          row.qty += atwar[0] + tirador[0];
+          sales += atwar[1] + tirador[1];
+        });
+        row.sales = sales;
+        row.stock = row.atwarStock + row.tiradorStock;
+        const monthly = span ? row.qty / span : 0;
+        row.age = monthly > 1e-6 ? row.stock / monthly : null;
+        return row;
+      });
+    }
+
+    function draw() {
+      const view = rows();
+      const tableColumns = columns();
+      if (!tableColumns.some((column) => column.key === state.sort)) state.sort = "age";
+      const sorted = sortRows(view, tableColumns, state.sort, state.dir);
+      const stock = view.reduce((sum, row) => sum + row.stock, 0);
+      const atwarStock = view.reduce((sum, row) => sum + row.atwarStock, 0);
+      const tiradorStock = view.reduce((sum, row) => sum + row.tiradorStock, 0);
+      const qty = view.reduce((sum, row) => sum + row.qty, 0);
+      const span = state.to - state.from + 1;
+      const monthly = span ? qty / span : 0;
+      const age = monthly > 1e-6 ? stock / monthly : null;
+      document.getElementById("tahlil-kpis").innerHTML = kpis([
+        { label: "الأصناف", html: num(view.length, "qty") },
+        { label: "مخزون أطوار", html: num(atwarStock, "qty"), note: "رصيد حالي" },
+        { label: "مخزون تيرادور", html: num(tiradorStock, "qty"), note: "رصيد حالي" },
+        { label: "إجمالي الكمية المباعة", html: num(qty, "qty"), note: `${monthName(state.from)} إلى ${monthName(state.to)}` },
+        { label: "متوسط الحركة الشهرية", html: num(monthly, "qty") },
+        { label: "عمر المخزون", html: ageText(age), note: "شهر للمتبقي" },
+      ]);
+      const groupLabel = state.group === "all" ? "كل المجموعات" : R.groups.find((group) => String(group.id) === String(state.group)).name;
+      const sectorLabel = state.sector === "all" ? "كل القطاعات" : state.sector;
+      document.getElementById("tahlil-banner").textContent = `التصفية المطبقة: ${sectorLabel}، ${groupLabel}، من ${monthName(state.from)} إلى ${monthName(state.to)}.`;
+      document.getElementById("tahlil-meta").innerHTML = `المعروض ${num(view.length, "qty")} صنفاً.`;
+      const host = document.getElementById("tahlil-table");
+      host.innerHTML = sorted.length ? tableHtml(tableColumns, sorted, state.sort, state.dir) : `<p class="lead">لا توجد أصناف لهذا الاختيار.</p>`;
+      const wrap = host.querySelector(".table-wrap");
+      if (wrap) wrap.classList.add("open");
+      host.querySelectorAll("th[data-k]").forEach((th) => {
+        const activate = () => {
+          const key = th.dataset.k;
+          const type = th.dataset.t || "num";
+          if (state.sort === key) state.dir *= -1;
+          else {
+            state.sort = key;
+            state.dir = type === "text" ? 1 : -1;
+          }
+          draw();
+        };
+        th.addEventListener("click", activate);
+        th.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            activate();
+          }
+        });
+      });
+    }
+
+    app.innerHTML = `
+      <div id="tahlil-kpis"></div>
+      <p id="tahlil-banner" class="note"></p>
+      <section class="section">
+        <h2>تحليل أداء الأصناف</h2>
+        <div class="toolbar">
+          <label class="field">القطاع
+            <select id="tahlil-sector"><option value="all">كل القطاعات</option>${sectorOptions}</select>
+          </label>
+          <label class="field">من شهر
+            <select id="tahlil-from">${monthOptions}</select>
+          </label>
+          <label class="field">إلى شهر
+            <select id="tahlil-to">${monthOptions}</select>
+          </label>
+        </div>
+        <div class="chips" id="tahlil-groups">
+          <button type="button" data-group="all" aria-pressed="true">كل المجموعات</button>
+          ${groupButtons}
+        </div>
+        <p class="meta-line" id="tahlil-meta"></p>
+        <p class="scroll-hint">انقر عنوان العمود للترتيب. الجدول يعرض كل الصفوف المطابقة.</p>
+        <div id="tahlil-table"></div>
+      </section>`;
+
+    document.getElementById("tahlil-to").value = "10";
+    document.getElementById("tahlil-sector").addEventListener("change", (event) => {
+      state.sector = event.target.value;
+      draw();
+    });
+    document.getElementById("tahlil-from").addEventListener("change", (event) => {
+      state.from = Number(event.target.value);
+      if (state.from > state.to) {
+        state.to = state.from;
+        document.getElementById("tahlil-to").value = String(state.to);
+      }
+      draw();
+    });
+    document.getElementById("tahlil-to").addEventListener("change", (event) => {
+      state.to = Number(event.target.value);
+      if (state.to < state.from) {
+        state.from = state.to;
+        document.getElementById("tahlil-from").value = String(state.from);
+      }
+      draw();
+    });
+    document.getElementById("tahlil-groups").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      state.group = button.dataset.group;
+      document.querySelectorAll("#tahlil-groups button").forEach((item) => {
+        item.setAttribute("aria-pressed", item === button ? "true" : "false");
+      });
+      draw();
+    });
+    draw();
+  }
+
   bootChrome();
   const pages = {
     home: renderHome,
@@ -2110,6 +2305,7 @@
     salb: renderMovementList,
     sifr: renderMovementList,
     pace: renderPace,
+    tahlil: renderTahlil,
   };
   pages[PAGE]();
 })();
