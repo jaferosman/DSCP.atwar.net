@@ -223,7 +223,7 @@
     app.innerHTML = `
       ${kpis([
         { label: "كمية المخزون الافتتاحي", html: num(t.openQty, "qty"), note: "وحدة" },
-        { label: "كمية المباع", html: num(t.netQty, "qty"), note: "يوليو إلى 2 أكتوبر" },
+        { label: "كمية المباع", html: num(t.netQty, "qty"), note: "يوليو إلى 9 أكتوبر" },
         { label: "إنجاز الكمية", html: rate(t.qtyRate), tone: "gold", note: "المباع من الافتتاح" },
         { label: "تكلفة المخزون الافتتاحي", html: num(t.openValue, "money"), note: "بالتكلفة" },
         { label: "تكلفة المباع", html: num(t.cogs, "money"), note: "كمية مباعة × تكلفة الحبة" },
@@ -294,7 +294,7 @@
         </a>
         <a class="card" href="tahlil.html">
           <span class="card-n">12</span>
-          <div><h2>تحليل الأداء</h2><p>مخزون كل شركة ومبيعاتها الشهرية وسعر البيع، وعمر المخزون المتبقي.</p></div>
+          <div><h2>تحليل الأداء</h2><p>مبيعات كل شركة شهرياً، ومخزون نهاية الشهر السابق، وعمر المخزون المتبقي.</p></div>
           <div class="card-stat"><strong class="num">${fmtQty(R.meta.itemCount)}</strong><span>صنف</span></div>
         </a>
       </div>
@@ -640,47 +640,151 @@
   ];
 
   function renderAtwar() {
-    const t = R.atwar.totals;
+    const lines = R.atwar.repLines;
     const app = document.getElementById("app");
+    const sectorNames = R.sectors.map((row) => row.name);
+    lines.forEach((line) => {
+      if (line.sector && !sectorNames.includes(line.sector)) sectorNames.push(line.sector);
+    });
+    const sectorOptions = sectorNames.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
+    const groupButtons = R.groups.map((group) => `<button type="button" data-group="${group.id}" aria-pressed="false">${esc(group.name)}</button>`).join("");
     app.innerHTML = `
-      ${kpis([
-        { label: "قيمة المبيعات", html: num(t.salesValue, "money") },
-        { label: "صافي الكمية", html: num(t.qty, "qty"), note: `مرتجعات ${fmtQty(Math.abs(t.returnsQty))}` },
-        { label: "صافي الربح", html: num(t.profit, "profit"), tone: t.profit >= 0 ? "good" : "bad", note: `هامش ${fmtPct(t.margin)}` },
-        { label: "المندوبون", html: num(R.atwar.reps.length, "qty") },
-        { label: "العملاء", html: num(t.customers, "qty") },
-        { label: "سبتمبر", html: num(t.sepProfit, "profit"), note: "صافي ربح الشهر" },
-      ])}
+      <div id="rep-kpis"></div>
+      <p id="rep-banner" class="note"></p>
       <section class="section">
         <h2>قيمة المبيعات حسب المندوب</h2>
-        <p class="lead">الترتيب حسب قيمة البيع. الربح يظهر في الجدول، وقد يكون سالباً رغم ارتفاع المبيعات.</p>
-        <div id="rep-bars"></div>
-      </section>
-      <section class="section">
-        <h2>تفصيل المندوبين</h2>
         <div class="toolbar">
           <label class="field">المنطقة
             <select id="region-filter"><option value="all">كل المناطق</option></select>
           </label>
+          <label class="field">القطاع
+            <select id="rep-sector"><option value="all">كل القطاعات</option>${sectorOptions}</select>
+          </label>
         </div>
-        <p class="scroll-hint">انقر عنوان العمود للترتيب.</p>
+        <div class="chips" id="rep-groups">
+          <button type="button" data-group="all" aria-pressed="true">كل المجموعات</button>
+          ${groupButtons}
+        </div>
+        <p class="lead">الترتيب حسب قيمة البيع داخل التصفية. الربح قد يكون سالباً رغم ارتفاع المبيعات.</p>
+        <div id="rep-bars"></div>
+      </section>
+      <section class="section">
+        <h2>تفصيل المندوبين</h2>
+        <p class="scroll-hint">انقر عنوان العمود للترتيب. حصة المبيعات تُحسب من المندوبين الظاهرين.</p>
         <div id="rep-table"></div>
       </section>`;
 
-    const regions = Array.from(new Set(R.atwar.reps.map((row) => row.region).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ar"));
+    const regions = Array.from(new Set(lines.map((line) => line.region).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ar"));
     const select = document.getElementById("region-filter");
     select.innerHTML += regions.map((region) => `<option value="${esc(region)}">${esc(region)}</option>`).join("");
-    const state = { sort: "salesValue", dir: -1, region: "all" };
-    function rows() {
-      return R.atwar.reps.filter((row) => state.region === "all" || row.region === state.region);
+    const state = { sort: "salesValue", dir: -1, region: "all", sector: "all", group: "all" };
+
+    function selectedLines() {
+      return lines.filter((line) => {
+        if (state.region !== "all" && line.region !== state.region) return false;
+        if (state.sector !== "all" && line.sector !== state.sector) return false;
+        if (state.group !== "all" && String(line.group) !== String(state.group)) return false;
+        return true;
+      });
     }
+
+    function aggregate(picked) {
+      const map = new Map();
+      let salesTotal = 0;
+      picked.forEach((line) => {
+        let row = map.get(line.rep);
+        if (!row) {
+          row = {
+            rep: line.rep,
+            region: line.region,
+            qty: 0,
+            salesValue: 0,
+            profit: 0,
+            returns: 0,
+            jul: 0,
+            aug: 0,
+            sep: 0,
+            oct: 0,
+            customers: new Set(),
+          };
+          map.set(line.rep, row);
+        }
+        row.qty += line.qty;
+        row.salesValue += line.salesValue;
+        row.profit += line.profit;
+        row.returns += line.returns;
+        if (line.month === 7) row.jul += line.qty;
+        else if (line.month === 8) row.aug += line.qty;
+        else if (line.month === 9) row.sep += line.qty;
+        else if (line.month === 10) row.oct += line.qty;
+        if (line.customer) row.customers.add(line.customer);
+        salesTotal += line.salesValue;
+      });
+      return [...map.values()].map((row) => ({
+        rep: row.rep,
+        region: row.region,
+        qty: row.qty,
+        salesValue: row.salesValue,
+        cogs: row.salesValue - row.profit,
+        profit: row.profit,
+        margin: Math.abs(row.salesValue) > 0.005 ? row.profit / row.salesValue : null,
+        jul: row.jul,
+        aug: row.aug,
+        sep: row.sep,
+        oct: row.oct,
+        customers: row.customers.size,
+        returns: row.returns,
+        salesShare: salesTotal ? row.salesValue / salesTotal : null,
+      })).filter((row) => Math.abs(row.qty) > 1e-6 || Math.abs(row.salesValue) > 0.005 || Math.abs(row.profit) > 0.005);
+    }
+
     function draw() {
-      const ranked = rows().slice().sort((a, b) => b.salesValue - a.salesValue);
-      document.getElementById("rep-bars").innerHTML = hbars(ranked, (row) => row.rep, (row) => row.salesValue, (value) => num(value, "money"));
-      mountTable(document.getElementById("rep-table"), repColumns, rows(), state, draw);
+      const picked = selectedLines();
+      const view = aggregate(picked);
+      const sales = picked.reduce((sum, line) => sum + line.salesValue, 0);
+      const qty = picked.reduce((sum, line) => sum + line.qty, 0);
+      const profit = picked.reduce((sum, line) => sum + line.profit, 0);
+      const returns = picked.reduce((sum, line) => sum + line.returns, 0);
+      const sepProfit = picked.reduce((sum, line) => sum + (line.month === 9 ? line.profit : 0), 0);
+      const people = new Set();
+      picked.forEach((line) => {
+        if (line.customer) people.add(line.customer);
+      });
+      const margin = Math.abs(sales) > 0.005 ? profit / sales : null;
+      document.getElementById("rep-kpis").innerHTML = kpis([
+        { label: "قيمة المبيعات", html: num(sales, "money") },
+        { label: "صافي الكمية", html: num(qty, "qty"), note: `مرتجعات ${fmtQty(Math.abs(returns))}` },
+        { label: "صافي الربح", html: num(profit, "profit"), tone: profit >= 0 ? "good" : "bad", note: `هامش ${fmtPct(margin)}` },
+        { label: "المندوبون", html: num(view.length, "qty") },
+        { label: "العملاء", html: num(people.size, "qty"), note: "بلا تكرار" },
+        { label: "سبتمبر", html: num(sepProfit, "profit"), note: "صافي ربح الشهر" },
+      ]);
+      const groupLabel = state.group === "all" ? "كل المجموعات" : R.groups.find((group) => String(group.id) === String(state.group)).name;
+      const sectorLabel = state.sector === "all" ? "كل القطاعات" : state.sector;
+      const regionLabel = state.region === "all" ? "كل المناطق" : state.region;
+      document.getElementById("rep-banner").textContent = `التصفية المطبقة: ${regionLabel}، ${sectorLabel}، ${groupLabel}.`;
+      const ranked = view.slice().sort((a, b) => b.salesValue - a.salesValue);
+      document.getElementById("rep-bars").innerHTML = ranked.length
+        ? hbars(ranked, (row) => row.rep, (row) => row.salesValue, (value) => num(value, "money"))
+        : `<p class="lead">لا توجد مبيعات لهذا الاختيار.</p>`;
+      mountTable(document.getElementById("rep-table"), repColumns, view, state, draw);
     }
+
     select.addEventListener("change", () => {
       state.region = select.value;
+      draw();
+    });
+    document.getElementById("rep-sector").addEventListener("change", (event) => {
+      state.sector = event.target.value;
+      draw();
+    });
+    document.getElementById("rep-groups").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      state.group = button.dataset.group;
+      document.querySelectorAll("#rep-groups button").forEach((item) => {
+        item.setAttribute("aria-pressed", item === button ? "true" : "false");
+      });
       draw();
     });
     draw();
@@ -969,7 +1073,7 @@
         { label: "قطاعات محصلتها تقلص", html: num(falling, "qty"), tone: "bad" },
       ])}
       <div class="note">
-        المقارنة على الأشهر الثلاثة الكاملة: يوليو وأغسطس وسبتمبر. أكتوبر مستبعد لأنه يقف عند 2 أكتوبر.
+        المقارنة على الأشهر الثلاثة الكاملة: يوليو وأغسطس وسبتمبر. أكتوبر مستبعد لأنه يقف عند 9 أكتوبر.
         الكمية صافية بعد المرتجعات. التصاعد المتصل يعني أن الكمية لم تنخفض في أي خطوة وسبتمبر أعلى من يوليو. التقلص المتصل عكس ذلك. إذا ارتفع شهر ثم انخفض الذي يليه، يُذكر الانعكاس ولو بقيت المحصلة موجبة.
       </div>
       <section class="section">
@@ -1072,7 +1176,7 @@
     app.innerHTML = `
       <div id="branch-kpis"></div>
       <p id="filter-banner" class="note" hidden></p>
-      <div class="note">المخزون رصيد حالي للأصناف الراكدة، ولا يتغير عند اختيار شهر. التصفية بالشهر تغيّر المبيعات فقط. أكتوبر يقف عند 2 أكتوبر.</div>
+      <div class="note">المخزون رصيد حالي للأصناف الراكدة، ولا يتغير عند اختيار شهر. التصفية بالشهر تغيّر المبيعات فقط. أكتوبر يقف عند 9 أكتوبر.</div>
       <section class="section">
         <div class="toolbar">
           <label class="field">القطاع
@@ -2137,32 +2241,37 @@
       return `<span class="num">${value.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>`;
     }
 
+    const openingBySku = new Map(R.items.map((item) => [item.sku, item]));
+
+    function closeStockOf(sku) {
+      const opening = openingBySku.get(sku);
+      if (!opening) return 0;
+      return (opening.openQty || 0) - ((opening.jul || 0) + (opening.aug || 0) + (opening.sep || 0));
+    }
+
     function columns() {
       const list = [
         { key: "sku", label: "رقم الصنف", type: "text", stick: true, html: (row) => `<span class="sku">${esc(row.sku)}</span>` },
         { key: "name", label: "الوصف", type: "text", clip: true, html: (row) => esc(row.name) },
-        { key: "atwarStock", label: "مخزون أطوار", type: "num", html: (row) => num(row.atwarStock, "qty") },
       ];
       selectedMonths().forEach((month) => {
-        const label = monthName(month);
         list.push({
           key: `aq${month}`,
-          label,
+          label: `أطوار ${monthName(month)}`,
           type: "num",
           html: (row) => qtyCell(row[`aq${month}`], row[`as${month}`], row.unitCost),
         });
       });
-      list.push({ key: "tiradorStock", label: "مخزون تيرادور", type: "num", html: (row) => num(row.tiradorStock, "qty") });
       selectedMonths().forEach((month) => {
-        const label = monthName(month);
         list.push({
           key: `tq${month}`,
-          label,
+          label: `تيرادور ${monthName(month)}`,
           type: "num",
           html: (row) => qtyCell(row[`tq${month}`], row[`ts${month}`], row.unitCost),
         });
       });
       list.push({ key: "qty", label: "إجمالي الكمية المباعة", type: "num", html: (row) => qtyCell(row.qty, row.sales, row.unitCost) });
+      list.push({ key: "closeStock", label: "إجمالي المخزون نهاية الشهر السابق", type: "num", html: (row) => num(row.closeStock, "qty") });
       list.push({ key: "age", label: "عمر المخزون", type: "num", html: (row) => ageText(row.age) });
       return list;
     }
@@ -2179,8 +2288,7 @@
           sku: item.sku,
           name: item.name,
           unitCost: item.unitCost,
-          atwarStock: item.stock[0] || 0,
-          tiradorStock: item.stock[1] || 0,
+          closeStock: closeStockOf(item.sku),
           qty: 0,
         };
         let sales = 0;
@@ -2195,9 +2303,8 @@
           sales += atwar[1] + tirador[1];
         });
         row.sales = sales;
-        row.stock = row.atwarStock + row.tiradorStock;
         const monthly = span ? row.qty / span : 0;
-        row.age = monthly > 1e-6 ? row.stock / monthly : null;
+        row.age = monthly > 1e-6 ? row.closeStock / monthly : null;
         return row;
       });
     }
@@ -2207,17 +2314,14 @@
       const tableColumns = columns();
       if (!tableColumns.some((column) => column.key === state.sort)) state.sort = "age";
       const sorted = sortRows(view, tableColumns, state.sort, state.dir);
-      const stock = view.reduce((sum, row) => sum + row.stock, 0);
-      const atwarStock = view.reduce((sum, row) => sum + row.atwarStock, 0);
-      const tiradorStock = view.reduce((sum, row) => sum + row.tiradorStock, 0);
+      const closeStock = view.reduce((sum, row) => sum + row.closeStock, 0);
       const qty = view.reduce((sum, row) => sum + row.qty, 0);
       const span = state.to - state.from + 1;
       const monthly = span ? qty / span : 0;
-      const age = monthly > 1e-6 ? stock / monthly : null;
+      const age = monthly > 1e-6 ? closeStock / monthly : null;
       document.getElementById("tahlil-kpis").innerHTML = kpis([
         { label: "الأصناف", html: num(view.length, "qty") },
-        { label: "مخزون أطوار", html: num(atwarStock, "qty"), note: "رصيد حالي" },
-        { label: "مخزون تيرادور", html: num(tiradorStock, "qty"), note: "رصيد حالي" },
+        { label: "مخزون نهاية سبتمبر", html: num(closeStock, "qty"), note: "إجمالي نهاية الشهر السابق" },
         { label: "إجمالي الكمية المباعة", html: num(qty, "qty"), note: `${monthName(state.from)} إلى ${monthName(state.to)}` },
         { label: "متوسط الحركة الشهرية", html: num(monthly, "qty") },
         { label: "عمر المخزون", html: ageText(age), note: "شهر للمتبقي" },
