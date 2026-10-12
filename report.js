@@ -290,7 +290,7 @@
         <a class="card" href="tatawor.html">
           <span class="card-n">11</span>
           <div><h2>تطور الأداء</h2><p>مقارنة أسبوع بالأسبوع الذي يسبقه، وشهر بالشهر الذي يسبقه.</p></div>
-          <div class="card-stat"><strong class="num">${num((R.pace.weeks.at(-1).all.sales - R.pace.weeks.at(-2).all.sales) / Math.abs(R.pace.weeks.at(-2).all.sales), "deltaPct")}</strong><span>مبيعات آخر أسبوع</span></div>
+          <div class="card-stat"><strong class="num">${num(((R.pace.weeks.at(-1).all.sales - R.pace.weeks.at(-1).all.profit) - (R.pace.weeks.at(-2).all.sales - R.pace.weeks.at(-2).all.profit)) / Math.abs(R.pace.weeks.at(-2).all.sales - R.pace.weeks.at(-2).all.profit), "deltaPct")}</strong><span>تكلفة آخر أسبوع</span></div>
         </a>
         <a class="card" href="tahlil.html">
           <span class="card-n">12</span>
@@ -308,7 +308,9 @@
       <div class="note">
         <strong>أساس الأرقام.</strong>
         القطاع والتكلفة والرصيد الافتتاحي مأخوذة من ورقة أداء الأصناف. المبيعات والربح أُعيد احتسابهما بربط كل فاتورة برقم الصنف نفسه. معادلات المبيعات في تلك الورقة تشير إلى صف آخر، فتُظهر الحركة على صنف غير الصنف الصحيح، بينما إجمالي الكمية وإجمالي القيمة في الملف يبقيان مطابقين لمجموع الحركة.
-      </div>`;
+      </div>
+      <div id="home-injaz"></div>`;
+    renderInjaz(document.getElementById("home-injaz"));
   }
 
   const sectorColumns = [
@@ -2015,7 +2017,7 @@
 
   function renderPace() {
     const app = document.getElementById("app");
-    const state = { mode: "week", index: paceDefault(R.pace.weeks), company: "all", sort: "dSales", dir: -1 };
+    const state = { mode: "week", index: paceDefault(R.pace.weeks), company: "all", sort: "dCost", dir: -1 };
     const companies = [
       ["all", "الكل"],
       ["atwar", "أطوار"],
@@ -2031,17 +2033,23 @@
       return `${amount}<span class="delta-sub">${num(pct, "deltaPct")}</span>`;
     }
 
+    function costOf(block) {
+      return (block.sales || 0) - (block.profit || 0);
+    }
+
     function compareRow(name, current, previous) {
+      const prevCost = costOf(previous);
+      const cost = costOf(current);
       return {
         name,
         prevQty: previous.qty,
         qty: current.qty,
         dQty: current.qty - previous.qty,
         pQty: changeRate(current.qty, previous.qty),
-        prevSales: previous.sales,
-        sales: current.sales,
-        dSales: current.sales - previous.sales,
-        pSales: changeRate(current.sales, previous.sales),
+        prevCost,
+        cost,
+        dCost: cost - prevCost,
+        pCost: changeRate(cost, prevCost),
         prevProfit: previous.profit,
         profit: current.profit,
         dProfit: current.profit - previous.profit,
@@ -2071,9 +2079,9 @@
       { key: "prevQty", label: "كمية سابقة", type: "num", html: (row) => num(row.prevQty, "qty") },
       { key: "qty", label: "كمية حالية", type: "num", html: (row) => num(row.qty, "qty") },
       { key: "dQty", label: "تغير الكمية", type: "num", html: (row) => deltaCell(row.dQty, row.pQty, "qty") },
-      { key: "prevSales", label: "مبيعات سابقة", type: "num", html: (row) => num(row.prevSales, "money") },
-      { key: "sales", label: "مبيعات حالية", type: "num", html: (row) => num(row.sales, "money") },
-      { key: "dSales", label: "تغير المبيعات", type: "num", html: (row) => deltaCell(row.dSales, row.pSales, "money") },
+      { key: "prevCost", label: "تكلفة سابقة", type: "num", html: (row) => num(row.prevCost, "money") },
+      { key: "cost", label: "تكلفة حالية", type: "num", html: (row) => num(row.cost, "money") },
+      { key: "dCost", label: "تغير التكلفة", type: "num", html: (row) => deltaCell(row.dCost, row.pCost, "money") },
       { key: "prevProfit", label: "ربح سابق", type: "num", html: (row) => num(row.prevProfit, "profit") },
       { key: "profit", label: "ربح حالي", type: "num", html: (row) => num(row.profit, "profit") },
       { key: "dProfit", label: "تغير الربح", type: "num", html: (row) => deltaCell(row.dProfit, row.pProfit, "money") },
@@ -2108,13 +2116,13 @@
       const now = current[state.company];
       const then = previous[state.company];
       const qtyChange = now.qty - then.qty;
-      const salesChange = now.sales - then.sales;
+      const costChange = costOf(now) - costOf(then);
       const profitChange = now.profit - then.profit;
       document.getElementById("pace-kpis").innerHTML = kpis([
         { label: "الكمية الحالية", html: num(now.qty, "qty"), note: `السابق ${fmtQty(then.qty)}` },
         { label: "تغير الكمية", html: num(qtyChange, "deltaQty"), note: num(changeRate(now.qty, then.qty), "deltaPct") },
-        { label: "المبيعات الحالية", html: num(now.sales, "money"), note: `السابق ${fmtMoney(then.sales)}` },
-        { label: "تغير المبيعات", html: num(salesChange, "profit"), note: num(changeRate(now.sales, then.sales), "deltaPct") },
+        { label: "تكلفة المباع الحالية", html: num(costOf(now), "money"), note: `السابق ${fmtMoney(costOf(then))}` },
+        { label: "تغير التكلفة", html: num(costChange, "profit"), note: num(changeRate(costOf(now), costOf(then)), "deltaPct") },
         { label: "الربح الحالي", html: num(now.profit, "profit"), tone: now.profit >= 0 ? "good" : "bad", note: `السابق ${fmtMoney(then.profit)}` },
         { label: "تغير الربح", html: num(profitChange, "profit"), note: num(changeRate(now.profit, then.profit), "deltaPct") },
       ]);
@@ -2413,6 +2421,136 @@
     draw();
   }
 
+  function renderInjaz(host) {
+    const root = host || document.getElementById("app");
+    const embedded = Boolean(host);
+    const monthKey = { 7: "jul", 8: "aug", 9: "sep", 10: "oct" };
+    const targets = [
+      { id: "2026-q3", label: "الربع الثالث 2026", rate: 0.1, months: [7, 8, 9], span: "يوليو إلى سبتمبر", partial: false },
+      { id: "2026-q4", label: "الربع الرابع 2026", rate: 0.2, months: [10], span: "حتى 9 أكتوبر", partial: true },
+    ];
+    const bases = new Map();
+    R.items.forEach((item) => {
+      const name = item.sector || "بدون قطاع";
+      let row = bases.get(name);
+      if (!row) {
+        row = { name, openValue: 0, months: { 7: 0, 8: 0, 9: 0, 10: 0 } };
+        bases.set(name, row);
+      }
+      const unit = item.unitCost || 0;
+      row.openValue += item.openValue || 0;
+      Object.entries(monthKey).forEach(([month, key]) => {
+        row.months[month] += (item[key] || 0) * unit;
+      });
+    });
+
+    function targetRate(value) {
+      if (!finite(value)) return num(null, "pct");
+      const band = value < 0.8 ? "rate-low" : value < 1 ? "rate-mid" : "rate-high";
+      return `<span class="num ${band}">${fmtPct(value)}</span>`;
+    }
+
+    function rowsFor(target) {
+      return [...bases.values()].map((row) => {
+        const cleared = target.months.reduce((sum, month) => sum + (row.months[month] || 0), 0);
+        const goal = row.openValue * target.rate;
+        return {
+          name: row.name,
+          openValue: row.openValue,
+          goal,
+          cleared,
+          rate: goal > 0.005 ? cleared / goal : null,
+          left: goal - cleared,
+        };
+      });
+    }
+
+    const columns = [
+      { key: "name", label: "القطاع", type: "text", stick: true, clip: true, html: (row) => esc(row.name) },
+      { key: "openValue", label: "تكلفة الافتتاح", type: "num", html: (row) => num(row.openValue, "money") },
+      { key: "goal", label: "المستهدف", type: "num", html: (row) => num(row.goal, "money") },
+      { key: "cleared", label: "تكلفة المباع", type: "num", html: (row) => num(row.cleared, "money") },
+      { key: "rate", label: "الإنجاز", type: "num", html: (row) => targetRate(row.rate) },
+      { key: "left", label: "المتبقي", type: "num", html: (row) => num(row.left, "money") },
+    ];
+    const state = { target: targets.length - 1, sort: "left", dir: -1 };
+    const options = targets.map((target, index) => `<option value="${index}">${esc(target.label)} — ${fmtPct(target.rate)}</option>`).join("");
+    root.innerHTML = `
+      <section class="section">
+        ${embedded ? `<h2>تطور الإنجاز</h2>` : ""}
+        <div class="toolbar">
+          <label class="field">المستهدف
+            <select id="injaz-target">${options}</select>
+          </label>
+        </div>
+        <p id="injaz-banner" class="note"></p>
+        <div id="injaz-summary"></div>
+      </section>
+      <section class="section">
+        <h2>الإنجاز مقابل المستهدف بالقطاع</h2>
+        <p class="lead">المتبقي الأكبر يظهر أولاً. الأخضر بلغ المستهدف أو تجاوزه، والأصفر بين 80% و100%، والأحمر دون 80%.</p>
+        <p class="scroll-hint">انقر عنوان العمود للترتيب.</p>
+        <div id="injaz-table"></div>
+      </section>`;
+    const select = root.querySelector("#injaz-target");
+    select.value = String(state.target);
+
+    function kpiCard(item) {
+      return `<article class="kpi ${item.tone || ""}">
+        <p class="kpi-label">${esc(item.label)}</p>
+        <p class="kpi-value">${item.html}</p>
+        ${item.note ? `<p class="kpi-note">${item.note}</p>` : ""}
+      </article>`;
+    }
+
+    function draw() {
+      const target = targets[state.target];
+      const rows = rowsFor(target);
+      const openValue = rows.reduce((sum, row) => sum + row.openValue, 0);
+      const cleared = rows.reduce((sum, row) => sum + row.cleared, 0);
+      const goal = openValue * target.rate;
+      const rate = goal ? cleared / goal : null;
+      root.querySelector("#injaz-banner").textContent = target.partial
+        ? `${target.label} جزئي، ويغطي ${target.span}. نوفمبر وديسمبر لم يدخلا بعد.`
+        : `${target.label} مكتمل، ويغطي ${target.span}.`;
+      root.querySelector("#injaz-summary").innerHTML = `
+        <div class="summary-row">
+          ${donutCard(rate, `إنجاز ${target.label}`, `${fmtMoney(cleared)} من مستهدف ${fmtMoney(goal)}`)}
+          ${kpiCard({ label: "المستهدف", html: num(goal, "money"), note: `${fmtPct(target.rate)} من تكلفة الافتتاح` })}
+          ${kpiCard({ label: "تكلفة المباع", html: num(cleared, "money"), note: target.span })}
+          ${kpiCard({ label: "الإنجاز", html: targetRate(rate), tone: rate >= 1 ? "good" : "bad", note: `المتبقي ${fmtMoney(goal - cleared)}` })}
+        </div>`;
+      const host = root.querySelector("#injaz-table");
+      host.innerHTML = tableHtml(columns, sortRows(rows, columns, state.sort, state.dir), state.sort, state.dir);
+      const wrap = host.querySelector(".table-wrap");
+      if (wrap) wrap.classList.add("open");
+      host.querySelectorAll("th[data-k]").forEach((th) => {
+        const activate = () => {
+          const key = th.dataset.k;
+          if (state.sort === key) state.dir *= -1;
+          else {
+            state.sort = key;
+            state.dir = th.dataset.t === "text" ? 1 : -1;
+          }
+          draw();
+        };
+        th.addEventListener("click", activate);
+        th.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            activate();
+          }
+        });
+      });
+    }
+
+    select.addEventListener("change", () => {
+      state.target = Number(select.value);
+      draw();
+    });
+    draw();
+  }
+
   bootChrome();
   const pages = {
     home: renderHome,
@@ -2427,6 +2565,7 @@
     salb: renderMovementList,
     sifr: renderMovementList,
     pace: renderPace,
+    injaz: renderInjaz,
     tahlil: renderTahlil,
   };
   pages[PAGE]();
