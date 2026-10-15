@@ -294,7 +294,7 @@
         </a>
         <a class="card" href="tahlil.html">
           <span class="card-n">12</span>
-          <div><h2>تحليل الأداء</h2><p>مبيعات كل شركة شهرياً، ومخزون نهاية الشهر السابق، وعمر المخزون المتبقي.</p></div>
+          <div><h2>تحليل الأداء</h2><p>مبيعات كل شركة شهرياً، ومخزون نهاية سبتمبر، وعمر المخزون المتبقي.</p></div>
           <div class="card-stat"><strong class="num">${fmtQty(R.meta.itemCount)}</strong><span>صنف</span></div>
         </a>
       </div>
@@ -1205,13 +1205,13 @@
       </section>
       <section class="section">
         <h2>تفصيل الفرع والقطاع</h2>
+        <p class="lead">الأعمدة فروع لوازم الأبواب، والصفوف قطاعات. القيمة إجمالي تكلفة المباع، وتحتها حصة الفرع من إجمالي تكلفة المباع للوازم في القطاع نفسه.</p>
         <div id="branch-detail"></div>
       </section>`;
 
     const filters = { sector: "all", branch: "all", month: 0 };
     const branchState = { sort: "salesValue", dir: -1 };
     const sectorState = { sort: "salesValue", dir: -1 };
-    const detailState = { sort: "salesValue", dir: -1 };
 
     function collect() {
       const salesMap = new Map();
@@ -1311,28 +1311,48 @@
       { key: "skus", label: "أصناف الفروع", type: "num", html: (row) => num(row.skus, "qty") },
     ];
 
-    function detailColumns() {
-      const columns = [
-        { key: "branchName", label: "الفرع", type: "text", stick: true, clip: true, html: (row) => esc(row.branchName) },
-        { key: "sector", label: "القطاع", type: "text", clip: true, html: (row) => esc(row.sector) },
-        { key: "qty", label: "كمية البيع", type: "num", html: (row) => num(row.qty, "qty") },
-        { key: "salesValue", label: "قيمة البيع", type: "num", html: (row) => num(row.salesValue, "money") },
-        { key: "profit", label: "صافي الربح", type: "num", html: (row) => num(row.profit, "profit") },
-      ];
-      if (!filters.month) {
-        columns.push(
-          { key: "jul", label: "يوليو", type: "num", html: (row) => num(row.jul, "qty") },
-          { key: "aug", label: "أغسطس", type: "num", html: (row) => num(row.aug, "qty") },
-          { key: "sep", label: "سبتمبر", type: "num", html: (row) => num(row.sep, "qty") },
-          { key: "oct", label: "أكتوبر", type: "num", html: (row) => num(row.oct, "qty") },
-        );
+    function costMatrix() {
+      const cells = new Map();
+      const sectorBase = new Map();
+      for (const row of R.tiradorGrid.sales) {
+        if (filters.month && row.month !== filters.month) continue;
+        if (filters.sector !== "all" && row.sector !== filters.sector) continue;
+        const cost = (row.salesValue || 0) - (row.profit || 0);
+        sectorBase.set(row.sector, (sectorBase.get(row.sector) || 0) + cost);
+        if (filters.branch !== "all" && row.branch !== filters.branch) continue;
+        const key = `${row.branch}\0${row.sector}`;
+        cells.set(key, (cells.get(key) || 0) + cost);
       }
-      columns.push(
-        { key: "stockQty", label: "المخزون الحالي", type: "num", html: (row) => num(row.stockQty, "qty") },
-        { key: "stockValue", label: "قيمة المخزون", type: "num", html: (row) => num(row.stockValue, "money") },
-        { key: "skus", label: "أصناف راكدة", type: "num", html: (row) => num(row.skus, "qty") },
-      );
-      return columns;
+      const order = new Map(R.sectors.map((sector, index) => [sector.name, index]));
+      const sectorNames = [...sectorBase.keys()]
+        .filter((name) => filters.branch === "all" || [...cells.keys()].some((key) => key.endsWith(`\0${name}`)))
+        .sort((a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999) || a.localeCompare(b, "ar"));
+      const branchTotals = new Map();
+      cells.forEach((cost, key) => {
+        const branch = key.split("\0")[0];
+        branchTotals.set(branch, (branchTotals.get(branch) || 0) + cost);
+      });
+      const branchNames = [...branchTotals.keys()].sort((a, b) => (branchTotals.get(b) - branchTotals.get(a)) || branchName(a).localeCompare(branchName(b), "ar"));
+      const cellHtml = (cost, base) => {
+        if (Math.abs(cost) < 0.005) return `<td class="numcol">—</td>`;
+        const share = Math.abs(base) > 0.005 ? cost / base : null;
+        return `<td class="numcol">${num(cost, "money")}<span class="qty-meta">${num(share, "pct")}</span></td>`;
+      };
+      const head = branchNames.map((branch) => `<th class="numcol branch-col">${esc(branchName(branch))}</th>`).join("");
+      const body = sectorNames.map((sector) => {
+        const base = sectorBase.get(sector) || 0;
+        const rowCells = branchNames.map((branch) => cellHtml(cells.get(`${branch}\0${sector}`) || 0, base)).join("");
+        return `<tr><td class="stick">${esc(sector)}</td>${rowCells}<td class="numcol">${num(base, "money")}</td></tr>`;
+      }).join("");
+      const foot = branchNames.map((branch) => `<td class="numcol">${num(branchTotals.get(branch) || 0, "money")}</td>`).join("");
+      const grand = sectorNames.reduce((sum, sector) => sum + (sectorBase.get(sector) || 0), 0);
+      return {
+        html: branchNames.length && sectorNames.length
+          ? `<div class="table-wrap open"><table class="matrix"><thead><tr><th class="stick">القطاع</th>${head}<th class="numcol">إجمالي القطاع</th></tr></thead><tbody>${body}</tbody><tfoot><tr><td class="stick">الإجمالي</td>${foot}<td class="numcol">${num(grand, "money")}</td></tr></tfoot></table></div>`
+          : `<p class="lead">لا توجد تكلفة مباعة لهذا الاختيار.</p>`,
+        sectors: sectorNames.length,
+        branches: branchNames.length,
+      };
     }
 
     function draw() {
@@ -1358,15 +1378,11 @@
         banner.hidden = false;
         banner.textContent = `التصفية المطبقة: قطاع ${filters.sector} فقط`;
       }
-      document.getElementById("branch-meta").textContent = `صفوف التفصيل: ${fmtQty(detail.length)}`;
-      const columns = detailColumns();
-      if (!columns.some((column) => column.key === detailState.sort)) {
-        detailState.sort = "salesValue";
-        detailState.dir = -1;
-      }
+      const matrix = costMatrix();
+      document.getElementById("branch-meta").textContent = `تفصيل التكلفة: ${fmtQty(matrix.sectors)} قطاعاً في ${fmtQty(matrix.branches)} فرع.`;
       mountTable(document.getElementById("branch-total"), branchColumns, byBranch, branchState, draw);
       mountTable(document.getElementById("sector-total"), sectorColumns, bySector, sectorState, draw);
-      mountTable(document.getElementById("branch-detail"), columns, detail, detailState, draw);
+      document.getElementById("branch-detail").innerHTML = matrix.html;
     }
 
     document.getElementById("filter-sector").addEventListener("change", (event) => {
@@ -2050,10 +2066,6 @@
         cost,
         dCost: cost - prevCost,
         pCost: changeRate(cost, prevCost),
-        prevProfit: previous.profit,
-        profit: current.profit,
-        dProfit: current.profit - previous.profit,
-        pProfit: changeRate(current.profit, previous.profit),
       };
     }
 
@@ -2082,9 +2094,6 @@
       { key: "prevCost", label: "تكلفة سابقة", type: "num", html: (row) => num(row.prevCost, "money") },
       { key: "cost", label: "تكلفة حالية", type: "num", html: (row) => num(row.cost, "money") },
       { key: "dCost", label: "تغير التكلفة", type: "num", html: (row) => deltaCell(row.dCost, row.pCost, "money") },
-      { key: "prevProfit", label: "ربح سابق", type: "num", html: (row) => num(row.prevProfit, "profit") },
-      { key: "profit", label: "ربح حالي", type: "num", html: (row) => num(row.profit, "profit") },
-      { key: "dProfit", label: "تغير الربح", type: "num", html: (row) => deltaCell(row.dProfit, row.pProfit, "money") },
     ];
 
     function bindSort(host, keyName, dirName) {
@@ -2117,15 +2126,12 @@
       const then = previous[state.company];
       const qtyChange = now.qty - then.qty;
       const costChange = costOf(now) - costOf(then);
-      const profitChange = now.profit - then.profit;
       document.getElementById("pace-kpis").innerHTML = kpis([
         { label: "الكمية الحالية", html: num(now.qty, "qty"), note: `السابق ${fmtQty(then.qty)}` },
         { label: "تغير الكمية", html: num(qtyChange, "deltaQty"), note: num(changeRate(now.qty, then.qty), "deltaPct") },
         { label: "تكلفة المباع الحالية", html: num(costOf(now), "money"), note: `السابق ${fmtMoney(costOf(then))}` },
         { label: "تغير التكلفة", html: num(costChange, "profit"), note: num(changeRate(costOf(now), costOf(then)), "deltaPct") },
-        { label: "الربح الحالي", html: num(now.profit, "profit"), tone: now.profit >= 0 ? "good" : "bad", note: `السابق ${fmtMoney(then.profit)}` },
-        { label: "تغير الربح", html: num(profitChange, "profit"), note: num(changeRate(now.profit, then.profit), "deltaPct") },
-      ]);
+      ], "four");
       const partials = [previous, current].filter((period) => period.partial);
       const banner = document.getElementById("pace-banner");
       if (partials.length) {
@@ -2249,12 +2255,10 @@
       return `<span class="num">${value.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>`;
     }
 
-    const openingBySku = new Map(R.items.map((item) => [item.sku, item]));
+    const sepStock = new Map(R.itemPerf.map((item) => [item.sku, item.sepStock || 0]));
 
     function closeStockOf(sku) {
-      const opening = openingBySku.get(sku);
-      if (!opening) return 0;
-      return (opening.openQty || 0) - ((opening.jul || 0) + (opening.aug || 0) + (opening.sep || 0));
+      return sepStock.get(sku) || 0;
     }
 
     function columns() {
@@ -2279,7 +2283,7 @@
         });
       });
       list.push({ key: "qty", label: "إجمالي الكمية المباعة", type: "num", html: (row) => qtyCell(row.qty, row.sales, row.unitCost) });
-      list.push({ key: "closeStock", label: "إجمالي المخزون نهاية الشهر السابق", type: "num", html: (row) => num(row.closeStock, "qty") });
+      list.push({ key: "closeStock", label: "إجمالي مخزون نهاية سبتمبر", type: "num", html: (row) => num(row.closeStock, "qty") });
       list.push({ key: "age", label: "عمر المخزون", type: "num", html: (row) => ageText(row.age) });
       return list;
     }
@@ -2329,7 +2333,7 @@
       const age = monthly > 1e-6 ? closeStock / monthly : null;
       document.getElementById("tahlil-kpis").innerHTML = kpis([
         { label: "الأصناف", html: num(view.length, "qty") },
-        { label: "مخزون نهاية سبتمبر", html: num(closeStock, "qty"), note: "إجمالي نهاية الشهر السابق" },
+        { label: "مخزون نهاية سبتمبر", html: num(closeStock, "qty"), note: "أطوار والمناديب وتيرادور" },
         { label: "إجمالي الكمية المباعة", html: num(qty, "qty"), note: `${monthName(state.from)} إلى ${monthName(state.to)}` },
         { label: "متوسط الحركة الشهرية", html: num(monthly, "qty") },
         { label: "عمر المخزون", html: ageText(age), note: "شهر للمتبقي" },
