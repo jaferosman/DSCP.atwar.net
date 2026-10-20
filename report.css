@@ -276,6 +276,7 @@ h2 {
 label.field { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.82rem; color: var(--muted); }
 
 input[type="search"],
+input[type="number"],
 select {
   font: inherit;
   color: var(--ink);
@@ -287,6 +288,10 @@ select {
 }
 
 input[type="search"] { min-width: min(22rem, 70vw); }
+
+.bound { display: flex; gap: 0.35rem; }
+.bound select { min-width: 6.6rem; }
+.bound input[type="number"] { width: 6.2rem; min-width: 6.2rem; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.7rem; }
 

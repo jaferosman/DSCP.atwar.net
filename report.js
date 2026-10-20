@@ -223,7 +223,7 @@
     app.innerHTML = `
       ${kpis([
         { label: "كمية المخزون الافتتاحي", html: num(t.openQty, "qty"), note: "وحدة" },
-        { label: "كمية المباع", html: num(t.netQty, "qty"), note: "يوليو إلى 9 أكتوبر" },
+        { label: "كمية المباع", html: num(t.netQty, "qty"), note: "يوليو إلى 16 أكتوبر" },
         { label: "إنجاز الكمية", html: rate(t.qtyRate), tone: "gold", note: "المباع من الافتتاح" },
         { label: "تكلفة المخزون الافتتاحي", html: num(t.openValue, "money"), note: "بالتكلفة" },
         { label: "تكلفة المباع", html: num(t.cogs, "money"), note: "كمية مباعة × تكلفة الحبة" },
@@ -1075,7 +1075,7 @@
         { label: "قطاعات محصلتها تقلص", html: num(falling, "qty"), tone: "bad" },
       ])}
       <div class="note">
-        المقارنة على الأشهر الثلاثة الكاملة: يوليو وأغسطس وسبتمبر. أكتوبر مستبعد لأنه يقف عند 9 أكتوبر.
+        المقارنة على الأشهر الثلاثة الكاملة: يوليو وأغسطس وسبتمبر. أكتوبر مستبعد لأنه يقف عند 16 أكتوبر.
         الكمية صافية بعد المرتجعات. التصاعد المتصل يعني أن الكمية لم تنخفض في أي خطوة وسبتمبر أعلى من يوليو. التقلص المتصل عكس ذلك. إذا ارتفع شهر ثم انخفض الذي يليه، يُذكر الانعكاس ولو بقيت المحصلة موجبة.
       </div>
       <section class="section">
@@ -1178,7 +1178,7 @@
     app.innerHTML = `
       <div id="branch-kpis"></div>
       <p id="filter-banner" class="note" hidden></p>
-      <div class="note">المخزون رصيد حالي للأصناف الراكدة، ولا يتغير عند اختيار شهر. التصفية بالشهر تغيّر المبيعات فقط. أكتوبر يقف عند 9 أكتوبر.</div>
+      <div class="note">المخزون رصيد حالي للأصناف الراكدة، ولا يتغير عند اختيار شهر. التصفية بالشهر تغيّر المبيعات فقط. أكتوبر يقف عند 16 أكتوبر.</div>
       <section class="section">
         <div class="toolbar">
           <label class="field">القطاع
@@ -2225,7 +2225,20 @@
     const groupButtons = R.groups.map((group) => `<button type="button" data-group="${group.id}" aria-pressed="false">${esc(group.name)}</button>`).join("");
     const sectorOptions = R.sectors.map((row) => `<option value="${esc(row.name)}">${esc(row.name)}</option>`).join("");
     const app = document.getElementById("app");
-    const state = { sector: "all", group: "all", from: 7, to: 10, sort: "age", dir: -1 };
+    const state = {
+      sector: "all",
+      group: "all",
+      company: "all",
+      from: 7,
+      to: 10,
+      opex: false,
+      ageOp: "",
+      ageValue: "",
+      marginOp: "",
+      marginValue: "",
+      sort: "age",
+      dir: -1,
+    };
 
     function selectedMonths() {
       const months = [];
@@ -2241,13 +2254,32 @@
       return Math.abs(qty) > 1e-6 ? amount / qty : null;
     }
 
-    function margin(amount, qty, unitCost) {
-      if (Math.abs(amount) <= 0.005) return null;
-      return (amount - qty * unitCost) / amount;
+    function profitOf(amount, qty, unitCost, company) {
+      let profit = amount - qty * unitCost;
+      if (state.opex && company === "tirador") profit -= amount * TIRADOR_OPEX_RATE;
+      return profit;
     }
 
-    function qtyCell(qty, amount, unitCost) {
-      return `${num(qty, "qty")}<span class="qty-meta">السعر ${num(price(amount, qty), "money")}</span><span class="qty-meta">الهامش ${num(margin(amount, qty, unitCost), "deltaPct")}</span>`;
+    function marginOf(profit, amount) {
+      if (Math.abs(amount) <= 0.005) return null;
+      return profit / amount;
+    }
+
+    function qtyCell(qty, amount, shownMargin) {
+      return `${num(qty, "qty")}<span class="qty-meta">السعر ${num(price(amount, qty), "money")}</span><span class="qty-meta">الهامش ${num(shownMargin, "deltaPct")}</span>`;
+    }
+
+    function companies() {
+      if (state.company === "all") return ["atwar", "tirador"];
+      return [state.company];
+    }
+
+    function passesBound(value, op, raw) {
+      if (!op || String(raw).trim() === "") return true;
+      const limit = Number(raw);
+      if (!Number.isFinite(limit)) return true;
+      if (!finite(value)) return false;
+      return op === "lt" ? value < limit : value > limit;
     }
 
     function ageText(value) {
@@ -2255,10 +2287,11 @@
       return `<span class="num">${value.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>`;
     }
 
-    const sepStock = new Map(R.itemPerf.map((item) => [item.sku, item.sepStock || 0]));
-
-    function closeStockOf(sku) {
-      return sepStock.get(sku) || 0;
+    function closeStockOf(item) {
+      const parts = Array.isArray(item.sepStock) ? item.sepStock : [item.sepStock || 0, 0];
+      if (state.company === "atwar") return parts[0] || 0;
+      if (state.company === "tirador") return parts[1] || 0;
+      return (parts[0] || 0) + (parts[1] || 0);
     }
 
     function columns() {
@@ -2266,24 +2299,29 @@
         { key: "sku", label: "رقم الصنف", type: "text", stick: true, html: (row) => `<span class="sku">${esc(row.sku)}</span>` },
         { key: "name", label: "الوصف", type: "text", clip: true, html: (row) => esc(row.name) },
       ];
-      selectedMonths().forEach((month) => {
-        list.push({
-          key: `aq${month}`,
-          label: `أطوار ${monthName(month)}`,
-          type: "num",
-          html: (row) => qtyCell(row[`aq${month}`], row[`as${month}`], row.unitCost),
+      if (companies().includes("atwar")) {
+        selectedMonths().forEach((month) => {
+          list.push({
+            key: `aq${month}`,
+            label: `أطوار ${monthName(month)}`,
+            type: "num",
+            html: (row) => qtyCell(row[`aq${month}`], row[`as${month}`], row[`am${month}`]),
+          });
         });
-      });
-      selectedMonths().forEach((month) => {
-        list.push({
-          key: `tq${month}`,
-          label: `تيرادور ${monthName(month)}`,
-          type: "num",
-          html: (row) => qtyCell(row[`tq${month}`], row[`ts${month}`], row.unitCost),
+      }
+      if (companies().includes("tirador")) {
+        selectedMonths().forEach((month) => {
+          list.push({
+            key: `tq${month}`,
+            label: `لوازم ${monthName(month)}`,
+            type: "num",
+            html: (row) => qtyCell(row[`tq${month}`], row[`ts${month}`], row[`tm${month}`]),
+          });
         });
-      });
-      list.push({ key: "qty", label: "إجمالي الكمية المباعة", type: "num", html: (row) => qtyCell(row.qty, row.sales, row.unitCost) });
+      }
+      list.push({ key: "qty", label: "إجمالي الكمية المباعة", type: "num", html: (row) => qtyCell(row.qty, row.sales, row.margin) });
       list.push({ key: "closeStock", label: "إجمالي مخزون نهاية سبتمبر", type: "num", html: (row) => num(row.closeStock, "qty") });
+      list.push({ key: "margin", label: "متوسط الربحية", type: "num", html: (row) => num(row.margin, "deltaPct") });
       list.push({ key: "age", label: "عمر المخزون", type: "num", html: (row) => ageText(row.age) });
       return list;
     }
@@ -2299,25 +2337,36 @@
         const row = {
           sku: item.sku,
           name: item.name,
-          unitCost: item.unitCost,
-          closeStock: closeStockOf(item.sku),
+          closeStock: closeStockOf(item),
           qty: 0,
+          sales: 0,
+          profit: 0,
         };
-        let sales = 0;
         months.forEach((month) => {
           const atwar = item.atwar[month - 7];
           const tirador = item.tirador[month - 7];
           row[`aq${month}`] = atwar[0];
           row[`as${month}`] = atwar[1];
+          row[`am${month}`] = marginOf(profitOf(atwar[1], atwar[0], item.unitCost, "atwar"), atwar[1]);
           row[`tq${month}`] = tirador[0];
           row[`ts${month}`] = tirador[1];
-          row.qty += atwar[0] + tirador[0];
-          sales += atwar[1] + tirador[1];
+          row[`tm${month}`] = marginOf(profitOf(tirador[1], tirador[0], item.unitCost, "tirador"), tirador[1]);
+          companies().forEach((company) => {
+            const qty = company === "atwar" ? atwar[0] : tirador[0];
+            const sales = company === "atwar" ? atwar[1] : tirador[1];
+            row.qty += qty;
+            row.sales += sales;
+            row.profit += profitOf(sales, qty, item.unitCost, company);
+          });
         });
-        row.sales = sales;
+        row.margin = marginOf(row.profit, row.sales);
         const monthly = span ? row.qty / span : 0;
         row.age = monthly > 1e-6 ? row.closeStock / monthly : null;
         return row;
+      }).filter((row) => {
+        if (!passesBound(row.age, state.ageOp, state.ageValue)) return false;
+        if (!passesBound(row.margin == null ? null : row.margin * 100, state.marginOp, state.marginValue)) return false;
+        return true;
       });
     }
 
@@ -2331,16 +2380,22 @@
       const span = state.to - state.from + 1;
       const monthly = span ? qty / span : 0;
       const age = monthly > 1e-6 ? closeStock / monthly : null;
+      const stockNote = state.company === "atwar" ? "مستودعات أطوار والمناديب" : state.company === "tirador" ? "مستودعات تيرادور" : "أطوار والمناديب وتيرادور";
       document.getElementById("tahlil-kpis").innerHTML = kpis([
         { label: "الأصناف", html: num(view.length, "qty") },
-        { label: "مخزون نهاية سبتمبر", html: num(closeStock, "qty"), note: "أطوار والمناديب وتيرادور" },
+        { label: "مخزون نهاية سبتمبر", html: num(closeStock, "qty"), note: stockNote },
         { label: "إجمالي الكمية المباعة", html: num(qty, "qty"), note: `${monthName(state.from)} إلى ${monthName(state.to)}` },
         { label: "متوسط الحركة الشهرية", html: num(monthly, "qty") },
         { label: "عمر المخزون", html: ageText(age), note: "شهر للمتبقي" },
       ]);
       const groupLabel = state.group === "all" ? "كل المجموعات" : R.groups.find((group) => String(group.id) === String(state.group)).name;
       const sectorLabel = state.sector === "all" ? "كل القطاعات" : state.sector;
-      document.getElementById("tahlil-banner").textContent = `التصفية المطبقة: ${sectorLabel}، ${groupLabel}، من ${monthName(state.from)} إلى ${monthName(state.to)}.`;
+      const companyLabel = state.company === "atwar" ? "أطوار" : state.company === "tirador" ? "لوازم" : "كل الشركات";
+      const bounds = [];
+      if (state.ageOp && String(state.ageValue).trim() !== "") bounds.push(`عمر المخزون ${state.ageOp === "lt" ? "أقل من" : "أكبر من"} ${state.ageValue} شهر`);
+      if (state.marginOp && String(state.marginValue).trim() !== "") bounds.push(`متوسط الربحية ${state.marginOp === "lt" ? "أقل من" : "أكبر من"} ${state.marginValue}%`);
+      if (state.opex && state.company !== "atwar") bounds.push("بعد خصم مخصص لوازم");
+      document.getElementById("tahlil-banner").textContent = `التصفية المطبقة: ${companyLabel}، ${sectorLabel}، ${groupLabel}، من ${monthName(state.from)} إلى ${monthName(state.to)}${bounds.length ? `، ${bounds.join("، ")}` : ""}.`;
       document.getElementById("tahlil-meta").innerHTML = `المعروض ${num(view.length, "qty")} صنفاً.`;
       const host = document.getElementById("tahlil-table");
       host.innerHTML = sorted.length ? tableHtml(tableColumns, sorted, state.sort, state.dir) : `<p class="lead">لا توجد أصناف لهذا الاختيار.</p>`;
@@ -2370,9 +2425,23 @@
     app.innerHTML = `
       <div id="tahlil-kpis"></div>
       <p id="tahlil-banner" class="note"></p>
+      <label class="check-option">
+        <input type="checkbox" id="tahlil-opex">
+        <span>
+          خصم مخصص المصاريف التشغيلية التقديرية من نتائج تيرادور
+          <small>المخصص يساوي 30% من إيراد لوازم، ويُطرح من الربح قبل حساب الهامش ومتوسط الربحية. نتائج أطوار تبقى كما هي.</small>
+        </span>
+      </label>
       <section class="section">
         <h2>تحليل أداء الأصناف</h2>
         <div class="toolbar">
+          <label class="field">الشركة
+            <select id="tahlil-company">
+              <option value="all">الكل</option>
+              <option value="atwar">أطوار</option>
+              <option value="tirador">لوازم</option>
+            </select>
+          </label>
           <label class="field">القطاع
             <select id="tahlil-sector"><option value="all">كل القطاعات</option>${sectorOptions}</select>
           </label>
@@ -2381,6 +2450,26 @@
           </label>
           <label class="field">إلى شهر
             <select id="tahlil-to">${monthOptions}</select>
+          </label>
+          <label class="field">عمر المخزون
+            <span class="bound">
+              <select id="tahlil-age-op">
+                <option value="">بدون حد</option>
+                <option value="lt">أقل من</option>
+                <option value="gt">أكبر من</option>
+              </select>
+              <input id="tahlil-age-value" type="number" inputmode="decimal" step="any" placeholder="شهر">
+            </span>
+          </label>
+          <label class="field">متوسط الربحية
+            <span class="bound">
+              <select id="tahlil-margin-op">
+                <option value="">بدون حد</option>
+                <option value="lt">أقل من</option>
+                <option value="gt">أكبر من</option>
+              </select>
+              <input id="tahlil-margin-value" type="number" inputmode="decimal" step="any" placeholder="%">
+            </span>
           </label>
         </div>
         <div class="chips" id="tahlil-groups">
@@ -2393,6 +2482,30 @@
       </section>`;
 
     document.getElementById("tahlil-to").value = "10";
+    document.getElementById("tahlil-opex").addEventListener("change", (event) => {
+      state.opex = event.target.checked;
+      draw();
+    });
+    document.getElementById("tahlil-company").addEventListener("change", (event) => {
+      state.company = event.target.value;
+      draw();
+    });
+    document.getElementById("tahlil-age-op").addEventListener("change", (event) => {
+      state.ageOp = event.target.value;
+      draw();
+    });
+    document.getElementById("tahlil-age-value").addEventListener("input", (event) => {
+      state.ageValue = event.target.value;
+      draw();
+    });
+    document.getElementById("tahlil-margin-op").addEventListener("change", (event) => {
+      state.marginOp = event.target.value;
+      draw();
+    });
+    document.getElementById("tahlil-margin-value").addEventListener("input", (event) => {
+      state.marginValue = event.target.value;
+      draw();
+    });
     document.getElementById("tahlil-sector").addEventListener("change", (event) => {
       state.sector = event.target.value;
       draw();
@@ -2431,7 +2544,7 @@
     const monthKey = { 7: "jul", 8: "aug", 9: "sep", 10: "oct" };
     const targets = [
       { id: "2026-q3", label: "الربع الثالث 2026", rate: 0.1, months: [7, 8, 9], span: "يوليو إلى سبتمبر", partial: false },
-      { id: "2026-q4", label: "الربع الرابع 2026", rate: 0.2, months: [10], span: "حتى 9 أكتوبر", partial: true },
+      { id: "2026-q4", label: "الربع الرابع 2026", rate: 0.2, months: [10], span: "حتى 16 أكتوبر", partial: true },
     ];
     const bases = new Map();
     R.items.forEach((item) => {
