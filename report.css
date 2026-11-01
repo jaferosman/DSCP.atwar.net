@@ -581,6 +581,48 @@ tbody tr:hover td.stick { background: #dde4ee; }
   .card-stat { grid-column: 2; text-align: start; }
 }
 
+body[data-page="qaemat"] .wrap {
+  width: min(100% - 1rem, 100vw - 1rem);
+}
+
+body[data-page="qaemat"] .table-wrap {
+  overflow-x: hidden;
+}
+
+body[data-page="qaemat"] table {
+  table-layout: fixed;
+  width: 100%;
+  font-size: clamp(0.58rem, 0.72vw, 0.72rem);
+}
+
+body[data-page="qaemat"] th,
+body[data-page="qaemat"] td {
+  padding: 0.18rem 0.22rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+body[data-page="qaemat"] th {
+  font-size: 0.9em;
+}
+
+body[data-page="qaemat"] td.stick,
+body[data-page="qaemat"] th.stick,
+body[data-page="qaemat"] td.clip,
+body[data-page="qaemat"] th.clip {
+  position: static;
+  min-width: 0;
+  max-width: none;
+  box-shadow: none;
+}
+
+body[data-page="qaemat"] .sku,
+body[data-page="qaemat"] .num {
+  font-size: inherit;
+}
+
 @page {
   size: A4 landscape;
   margin: 8mm;

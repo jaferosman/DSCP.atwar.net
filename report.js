@@ -15,6 +15,7 @@
     ["asnaf-sifr.html", "sifr", "حركة صفرية"],
     ["tatawor.html", "pace", "تطور الأداء"],
     ["tahlil.html", "tahlil", "تحليل الأداء"],
+    ["qaemat.html", "qaemat", "قائمة الرواكد"],
   ];
 
   function esc(value) {
@@ -296,6 +297,11 @@
           <span class="card-n">12</span>
           <div><h2>تحليل الأداء</h2><p>مبيعات كل شركة شهرياً، ومخزون نهاية سبتمبر، وعمر المخزون المتبقي.</p></div>
           <div class="card-stat"><strong class="num">${fmtQty(R.meta.itemCount)}</strong><span>صنف</span></div>
+        </a>
+        <a class="card" href="qaemat.html">
+          <span class="card-n">13</span>
+          <div><h2>قائمة الرواكد</h2><p>التصنيف والتكلفة والافتتاح ومخزون نهاية أكتوبر وأسعار البيع المعتمدة والنظام.</p></div>
+          <div class="card-stat"><strong class="num">${fmtQty((R.slowList || []).length || R.meta.itemCount)}</strong><span>صنف</span></div>
         </a>
       </div>
       <section class="section" style="margin-top:1rem">
@@ -2538,6 +2544,136 @@
     draw();
   }
 
+  function renderQaemat() {
+    const list = R.slowList || [];
+    const app = document.getElementById("app");
+    const state = {
+      q: "",
+      sector: "all",
+      subSector: "all",
+      group: "all",
+      sort: "sku",
+      dir: 1,
+    };
+    const sectors = [...new Set(list.map((row) => row.sector).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
+    const subSectors = [...new Set(list.map((row) => row.subSector).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
+    const asOf = R.meta.monthStockAsOf || "2026-10-31";
+    const asOfLabel = asOf === "2026-10-31" ? "31 أكتوبر 2026" : asOf;
+
+    const columns = [
+      { key: "sku", label: "رقم الصنف", type: "text", stick: true, html: (row) => `<span class="sku">${esc(row.sku)}</span>` },
+      { key: "name", label: "الوصف", type: "text", clip: true, html: (row) => esc(row.name) },
+      { key: "sector", label: "القطاع الرئيسي", type: "text", clip: true, html: (row) => esc(row.sector) },
+      { key: "subSector", label: "القطاع الفرعي", type: "text", clip: true, html: (row) => esc(row.subSector) },
+      { key: "groupName", label: "مجموعة الرواكد", type: "text", html: (row) => esc(row.groupName) },
+      { key: "unitCost", label: "متوسط التكلفة", type: "num", html: (row) => num(row.unitCost, "money") },
+      { key: "openQty", label: "إجمالي المخزون الافتتاحي", type: "num", html: (row) => num(row.openQty, "qty") },
+      { key: "monthAtwar", label: "مخزون أطوار نهاية الشهر", type: "num", html: (row) => num(row.monthAtwar, "qty") },
+      { key: "monthTirador", label: "مخزون لوازم نهاية الشهر", type: "num", html: (row) => num(row.monthTirador, "qty") },
+      { key: "monthTotal", label: "إجمالي مخزون نهاية الشهر", type: "num", html: (row) => num(row.monthTotal, "qty") },
+      { key: "clearQty", label: "كمية التصريف", type: "num", html: (row) => num(row.clearQty, "deltaQty") },
+      { key: "approvedPrice", label: "سعر البيع المعتمد", type: "num", html: (row) => num(row.approvedPrice, "money") },
+      {
+        key: "systemPrice",
+        label: "سعر البيع في النظام",
+        type: "num",
+        html: (row) => {
+          const price = num(row.systemPrice, "money");
+          const approved = row.approvedPrice;
+          const mismatch = finite(approved) && Math.abs(approved) > 1e-9 && finite(row.systemPrice) && Math.abs(row.systemPrice - approved) > 1e-9;
+          return mismatch ? `<span class="neg">${price}</span>` : price;
+        },
+      },
+    ];
+
+    function rows() {
+      const query = state.q.trim();
+      return list.filter((row) => {
+        if (state.sector !== "all" && row.sector !== state.sector) return false;
+        if (state.subSector !== "all" && row.subSector !== state.subSector) return false;
+        if (state.group !== "all" && String(row.group) !== String(state.group)) return false;
+        if (!query) return true;
+        return row.sku.includes(query) || (row.name || "").includes(query) || (row.sector || "").includes(query) || (row.subSector || "").includes(query);
+      });
+    }
+
+    function draw() {
+      const view = rows();
+      const sorted = sortRows(view, columns, state.sort, state.dir);
+      const openQty = view.reduce((sum, row) => sum + (row.openQty || 0), 0);
+      const monthTotal = view.reduce((sum, row) => sum + (row.monthTotal || 0), 0);
+      const clearQty = view.reduce((sum, row) => sum + (row.clearQty || 0), 0);
+      document.getElementById("qaemat-kpis").innerHTML = kpis([
+        { label: "الأصناف", html: num(view.length, "qty") },
+        { label: "المخزون الافتتاحي", html: num(openQty, "qty") },
+        { label: "مخزون نهاية أكتوبر", html: num(monthTotal, "qty"), note: asOfLabel },
+        { label: "كمية التصريف", html: num(clearQty, "deltaQty"), note: "افتتاح − نهاية الشهر" },
+        { label: "بأسعار معتمدة", html: num(view.filter((row) => row.approvedPrice != null).length, "qty") },
+        { label: "بسعر نظام أطوار", html: num(view.filter((row) => row.systemPrice != null).length, "qty") },
+      ]);
+      const sectorLabel = state.sector === "all" ? "كل القطاعات" : state.sector;
+      const subLabel = state.subSector === "all" ? "كل القطاعات الفرعية" : state.subSector;
+      const groupLabel = state.group === "all" ? "كل المجموعات" : (R.groups.find((group) => String(group.id) === String(state.group)) || { name: state.group }).name;
+      document.getElementById("qaemat-banner").textContent = `التصفية المطبقة: ${sectorLabel}، ${subLabel}، ${groupLabel}${state.q.trim() ? `، بحث «${state.q.trim()}»` : ""}.`;
+      document.getElementById("qaemat-meta").innerHTML = `المعروض ${num(view.length, "qty")} من ${num(list.length, "qty")} صنفاً.`;
+      mountTable(document.getElementById("qaemat-table"), columns, sorted, state, draw);
+      const wrap = document.querySelector("#qaemat-table .table-wrap");
+      if (wrap) wrap.classList.add("open");
+    }
+
+    const sectorOptions = sectors.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
+    const subOptions = subSectors.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
+    const groupButtons = R.groups.map((group) => `<button type="button" data-group="${group.id}" aria-pressed="false">${esc(group.name)}</button>`).join("");
+
+    app.innerHTML = `
+      <div id="qaemat-kpis"></div>
+      <p id="qaemat-banner" class="note"></p>
+      <section class="section">
+        <h2>قائمة الأصناف الراكدة</h2>
+        <div class="toolbar">
+          <label class="field">بحث
+            <input id="qaemat-q" type="search" placeholder="رقم الصنف أو الوصف">
+          </label>
+          <label class="field">القطاع الرئيسي
+            <select id="qaemat-sector"><option value="all">كل القطاعات</option>${sectorOptions}</select>
+          </label>
+          <label class="field">القطاع الفرعي
+            <select id="qaemat-sub"><option value="all">كل القطاعات الفرعية</option>${subOptions}</select>
+          </label>
+        </div>
+        <div class="chips" id="qaemat-groups">
+          <button type="button" data-group="all" aria-pressed="true">كل المجموعات</button>
+          ${groupButtons}
+        </div>
+        <p class="meta-line" id="qaemat-meta"></p>
+        <p class="scroll-hint">مخزون نهاية الشهر حتى ${esc(asOfLabel)}. سعر النظام = أقل شريحة في قائمة سعر بيع عملاء أطوار. انقر عنوان العمود للترتيب.</p>
+        <div id="qaemat-table"></div>
+      </section>`;
+
+    document.getElementById("qaemat-q").addEventListener("input", (event) => {
+      state.q = event.target.value;
+      draw();
+    });
+    document.getElementById("qaemat-sector").addEventListener("change", (event) => {
+      state.sector = event.target.value;
+      draw();
+    });
+    document.getElementById("qaemat-sub").addEventListener("change", (event) => {
+      state.subSector = event.target.value;
+      draw();
+    });
+    document.getElementById("qaemat-groups").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      state.group = button.dataset.group;
+      document.querySelectorAll("#qaemat-groups button").forEach((item) => {
+        item.setAttribute("aria-pressed", item === button ? "true" : "false");
+      });
+      draw();
+    });
+    draw();
+  }
+
   function renderInjaz(host) {
     const root = host || document.getElementById("app");
     const embedded = Boolean(host);
@@ -2684,6 +2820,7 @@
     pace: renderPace,
     injaz: renderInjaz,
     tahlil: renderTahlil,
+    qaemat: renderQaemat,
   };
   pages[PAGE]();
 })();
