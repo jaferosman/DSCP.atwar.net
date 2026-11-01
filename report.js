@@ -223,7 +223,7 @@
     app.innerHTML = `
       ${kpis([
         { label: "كمية المخزون الافتتاحي", html: num(t.openQty, "qty"), note: "وحدة" },
-        { label: "كمية المباع", html: num(t.netQty, "qty"), note: "يوليو إلى 16 أكتوبر" },
+        { label: "كمية المباع", html: num(t.netQty, "qty"), note: "يوليو إلى 30 أكتوبر" },
         { label: "إنجاز الكمية", html: rate(t.qtyRate), tone: "gold", note: "المباع من الافتتاح" },
         { label: "تكلفة المخزون الافتتاحي", html: num(t.openValue, "money"), note: "بالتكلفة" },
         { label: "تكلفة المباع", html: num(t.cogs, "money"), note: "كمية مباعة × تكلفة الحبة" },
@@ -1075,7 +1075,7 @@
         { label: "قطاعات محصلتها تقلص", html: num(falling, "qty"), tone: "bad" },
       ])}
       <div class="note">
-        المقارنة على الأشهر الثلاثة الكاملة: يوليو وأغسطس وسبتمبر. أكتوبر مستبعد لأنه يقف عند 16 أكتوبر.
+        المقارنة على الأشهر الثلاثة الكاملة: يوليو وأغسطس وسبتمبر. أكتوبر مستبعد لأنه يقف عند 30 أكتوبر.
         الكمية صافية بعد المرتجعات. التصاعد المتصل يعني أن الكمية لم تنخفض في أي خطوة وسبتمبر أعلى من يوليو. التقلص المتصل عكس ذلك. إذا ارتفع شهر ثم انخفض الذي يليه، يُذكر الانعكاس ولو بقيت المحصلة موجبة.
       </div>
       <section class="section">
@@ -1178,7 +1178,7 @@
     app.innerHTML = `
       <div id="branch-kpis"></div>
       <p id="filter-banner" class="note" hidden></p>
-      <div class="note">المخزون رصيد حالي للأصناف الراكدة، ولا يتغير عند اختيار شهر. التصفية بالشهر تغيّر المبيعات فقط. أكتوبر يقف عند 16 أكتوبر.</div>
+      <div class="note">المخزون رصيد حالي للأصناف الراكدة، ولا يتغير عند اختيار شهر. التصفية بالشهر تغيّر المبيعات فقط. أكتوبر يقف عند 30 أكتوبر.</div>
       <section class="section">
         <div class="toolbar">
           <label class="field">القطاع
@@ -2544,7 +2544,7 @@
     const monthKey = { 7: "jul", 8: "aug", 9: "sep", 10: "oct" };
     const targets = [
       { id: "2026-q3", label: "الربع الثالث 2026", rate: 0.1, months: [7, 8, 9], span: "يوليو إلى سبتمبر", partial: false },
-      { id: "2026-q4", label: "الربع الرابع 2026", rate: 0.2, months: [10], span: "حتى 16 أكتوبر", partial: true },
+      { id: "2026-q4", label: "الربع الرابع 2026", rate: 0.2, months: [10], span: "حتى 30 أكتوبر", partial: true },
     ];
     const bases = new Map();
     R.items.forEach((item) => {
