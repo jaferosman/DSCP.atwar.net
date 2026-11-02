@@ -224,7 +224,7 @@
     app.innerHTML = `
       ${kpis([
         { label: "كمية المخزون الافتتاحي", html: num(t.openQty, "qty"), note: "وحدة" },
-        { label: "كمية المباع", html: num(t.netQty, "qty"), note: "يوليو إلى 30 أكتوبر" },
+        { label: "كمية المباع", html: num(t.netQty, "qty"), note: "يوليو إلى 31 أكتوبر" },
         { label: "إنجاز الكمية", html: rate(t.qtyRate), tone: "gold", note: "المباع من الافتتاح" },
         { label: "تكلفة المخزون الافتتاحي", html: num(t.openValue, "money"), note: "بالتكلفة" },
         { label: "تكلفة المباع", html: num(t.cogs, "money"), note: "كمية مباعة × تكلفة الحبة" },
@@ -260,8 +260,8 @@
         </a>
         <a class="card" href="haraka.html">
           <span class="card-n">05</span>
-          <div><h2>حركة الأشهر الثلاثة</h2><p>تصاعد كمية البيع أو تقلصها من يوليو إلى سبتمبر، قطاعاً بقطاع.</p></div>
-          <div class="card-stat"><strong class="num">${fmtPct((R.totals.sep - R.totals.jul) / R.totals.jul)}</strong><span>من يوليو إلى سبتمبر</span></div>
+          <div><h2>حركة الأشهر الثلاثة</h2><p>تصاعد كمية البيع أو تقلصها من أغسطس إلى أكتوبر، قطاعاً بقطاع.</p></div>
+          <div class="card-stat"><strong class="num">${fmtPct((R.totals.oct - R.totals.aug) / R.totals.aug)}</strong><span>من أغسطس إلى أكتوبر</span></div>
         </a>
         <a class="card" href="tirador-qita.html">
           <span class="card-n">06</span>
@@ -295,7 +295,7 @@
         </a>
         <a class="card" href="tahlil.html">
           <span class="card-n">12</span>
-          <div><h2>تحليل الأداء</h2><p>مبيعات كل شركة شهرياً، ومخزون نهاية سبتمبر، وعمر المخزون المتبقي.</p></div>
+          <div><h2>تحليل الأداء</h2><p>مبيعات كل شركة شهرياً، ومخزون نهاية أكتوبر، وعمر المخزون المتبقي.</p></div>
           <div class="card-stat"><strong class="num">${fmtQty(R.meta.itemCount)}</strong><span>صنف</span></div>
         </a>
         <a class="card" href="qaemat.html">
@@ -753,7 +753,7 @@
       const qty = picked.reduce((sum, line) => sum + line.qty, 0);
       const profit = picked.reduce((sum, line) => sum + line.profit, 0);
       const returns = picked.reduce((sum, line) => sum + line.returns, 0);
-      const sepProfit = picked.reduce((sum, line) => sum + (line.month === 9 ? line.profit : 0), 0);
+      const octProfit = picked.reduce((sum, line) => sum + (line.month === 10 ? line.profit : 0), 0);
       const people = new Set();
       picked.forEach((line) => {
         if (line.customer) people.add(line.customer);
@@ -765,7 +765,7 @@
         { label: "صافي الربح", html: num(profit, "profit"), tone: profit >= 0 ? "good" : "bad", note: `هامش ${fmtPct(margin)}` },
         { label: "المندوبون", html: num(view.length, "qty") },
         { label: "العملاء", html: num(people.size, "qty"), note: "بلا تكرار" },
-        { label: "سبتمبر", html: num(sepProfit, "profit"), note: "صافي ربح الشهر" },
+        { label: "أكتوبر", html: num(octProfit, "profit"), note: "صافي ربح الشهر" },
       ]);
       const groupLabel = state.group === "all" ? "كل المجموعات" : R.groups.find((group) => String(group.id) === String(state.group)).name;
       const sectorLabel = state.sector === "all" ? "كل القطاعات" : state.sector;
@@ -919,7 +919,7 @@
         </div>
         <section class="section">
           <h2>الربح حسب الشهر</h2>
-          <p class="lead">أكتوبر يغطي اليومين الأول والثاني فقط.</p>
+          <p class="lead">أكتوبر مكتمل حتى 31 أكتوبر 2026.</p>
           <div class="table-wrap">
             <table>
               <thead>
@@ -979,14 +979,14 @@
   }
 
   function sectorTrend(row) {
-    const jul = row.jul || 0;
     const aug = row.aug || 0;
     const sep = row.sep || 0;
-    const up1 = aug > jul + 0.05;
-    const down1 = aug < jul - 0.05;
-    const up2 = sep > aug + 0.05;
-    const down2 = sep < aug - 0.05;
-    const flat = Math.abs(sep - jul) < 0.5 && Math.abs(aug - jul) < 0.5;
+    const oct = row.oct || 0;
+    const up1 = sep > aug + 0.05;
+    const down1 = sep < aug - 0.05;
+    const up2 = oct > sep + 0.05;
+    const down2 = oct < sep - 0.05;
+    const flat = Math.abs(oct - aug) < 0.5 && Math.abs(sep - aug) < 0.5;
     let kind = "flat";
     let label = "ثبات";
     if (!flat && up1 && down2) {
@@ -995,37 +995,37 @@
     } else if (!flat && down1 && up2) {
       kind = "turn";
       label = "تقلص ثم تصاعد";
-    } else if (!flat && sep > jul && !down1 && !down2) {
+    } else if (!flat && oct > aug && !down1 && !down2) {
       kind = "up";
       label = "تصاعد متصل";
-    } else if (!flat && sep < jul && !up1 && !up2) {
+    } else if (!flat && oct < aug && !up1 && !up2) {
       kind = "down";
       label = "تقلص متصل";
-    } else if (!flat && sep > jul) {
+    } else if (!flat && oct > aug) {
       kind = "up";
       label = "تصاعد في المحصلة";
-    } else if (!flat && sep < jul) {
+    } else if (!flat && oct < aug) {
       kind = "down";
       label = "تقلص في المحصلة";
     }
     return {
       name: row.name,
-      jul,
       aug,
       sep,
-      d1: aug - jul,
-      d2: sep - aug,
-      dQ: sep - jul,
-      p1: jul ? (aug - jul) / jul : null,
-      p2: aug ? (sep - aug) / aug : null,
-      pQ: jul ? (sep - jul) / jul : null,
+      oct,
+      d1: sep - aug,
+      d2: oct - sep,
+      dQ: oct - aug,
+      p1: aug ? (sep - aug) / aug : null,
+      p2: sep ? (oct - sep) / sep : null,
+      pQ: aug ? (oct - aug) / aug : null,
       kind,
       label,
     };
   }
 
-  function sparkline(jul, aug, sep) {
-    const values = [jul, aug, sep];
+  function sparkline(aug, sep, oct) {
+    const values = [aug, sep, oct];
     const min = Math.min(...values);
     const max = Math.max(...values);
     const span = max - min || 1;
@@ -1034,7 +1034,7 @@
       const y = 26 - ((value - min) / span) * 20;
       return `${x},${y.toFixed(1)}`;
     }).join(" ");
-    const color = sep > jul ? "#0c6844" : sep < jul ? "#9b2c2c" : "#2C4C7C";
+    const color = oct > aug ? "#0c6844" : oct < aug ? "#9b2c2c" : "#2C4C7C";
     return `<svg class="spark" viewBox="0 0 80 32" width="80" height="32" aria-hidden="true"><polyline fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" points="${points}"/></svg>`;
   }
 
@@ -1044,61 +1044,149 @@
 
   const trendColumns = [
     { key: "name", label: "القطاع", type: "text", stick: true, clip: true, html: (row) => esc(row.name) },
-    { key: "path", label: "المسار", type: "text", nosort: true, html: (row) => sparkline(row.jul, row.aug, row.sep) },
+    { key: "path", label: "المسار", type: "text", nosort: true, html: (row) => sparkline(row.aug, row.sep, row.oct) },
     { key: "label", label: "الاتجاه", type: "text", html: (row) => trendBadge(row) },
-    { key: "jul", label: "يوليو", type: "num", html: (row) => num(row.jul, "qty") },
     { key: "aug", label: "أغسطس", type: "num", html: (row) => num(row.aug, "qty") },
     { key: "sep", label: "سبتمبر", type: "num", html: (row) => num(row.sep, "qty") },
-    { key: "d1", label: "أغسطس − يوليو", type: "num", html: (row) => num(row.d1, "deltaQty") },
-    { key: "p1", label: "نسبة أغسطس", type: "num", html: (row) => num(row.p1, "deltaPct") },
-    { key: "d2", label: "سبتمبر − أغسطس", type: "num", html: (row) => num(row.d2, "deltaQty") },
-    { key: "p2", label: "نسبة سبتمبر", type: "num", html: (row) => num(row.p2, "deltaPct") },
-    { key: "dQ", label: "سبتمبر − يوليو", type: "num", html: (row) => num(row.dQ, "deltaQty") },
-    { key: "pQ", label: "محصلة الربع", type: "num", html: (row) => num(row.pQ, "deltaPct") },
+    { key: "oct", label: "أكتوبر", type: "num", html: (row) => num(row.oct, "qty") },
+    { key: "d1", label: "سبتمبر − أغسطس", type: "num", html: (row) => num(row.d1, "deltaQty") },
+    { key: "p1", label: "نسبة سبتمبر", type: "num", html: (row) => num(row.p1, "deltaPct") },
+    { key: "d2", label: "أكتوبر − سبتمبر", type: "num", html: (row) => num(row.d2, "deltaQty") },
+    { key: "p2", label: "نسبة أكتوبر", type: "num", html: (row) => num(row.p2, "deltaPct") },
+    { key: "dQ", label: "أكتوبر − أغسطس", type: "num", html: (row) => num(row.dQ, "deltaQty") },
+    { key: "pQ", label: "محصلة الأشهر الثلاثة", type: "num", html: (row) => num(row.pQ, "deltaPct") },
   ];
+
+  function completeCostMonths() {
+    const defs = [
+      { id: 7, key: "jul", label: "يوليو" },
+      { id: 8, key: "aug", label: "أغسطس" },
+      { id: 9, key: "sep", label: "سبتمبر" },
+      { id: 10, key: "oct", label: "أكتوبر" },
+      { id: 11, key: "nov", label: "نوفمبر" },
+      { id: 12, key: "dec", label: "ديسمبر" },
+    ];
+    const paceMonths = (R.pace && R.pace.months) || [];
+    return defs.filter((def) => {
+      const pace = paceMonths.find((month) => Number(month.id) === def.id);
+      if (pace) return !pace.partial;
+      return R.items.some((item) => Object.prototype.hasOwnProperty.call(item, def.key));
+    });
+  }
+
+  function monthCostBySector(months) {
+    const map = new Map();
+    R.sectors.forEach((sector) => {
+      const costs = {};
+      months.forEach((month) => {
+        costs[month.key] = 0;
+      });
+      map.set(sector.name, {
+        name: sector.name,
+        openValue: sector.openValue || 0,
+        costs,
+      });
+    });
+    R.items.forEach((item) => {
+      const name = item.sector || "بدون قطاع";
+      let row = map.get(name);
+      if (!row) {
+        const costs = {};
+        months.forEach((month) => {
+          costs[month.key] = 0;
+        });
+        row = { name, openValue: 0, costs };
+        map.set(name, row);
+      }
+      const unit = item.unitCost || 0;
+      months.forEach((month) => {
+        row.costs[month.key] += (item[month.key] || 0) * unit;
+      });
+    });
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "ar"));
+  }
+
+  function monthCostMatrixHtml() {
+    const months = completeCostMonths();
+    if (!months.length) return `<p class="lead">لا توجد أشهر مكتملة لعرض تكلفة المباع.</p>`;
+    const rows = monthCostBySector(months);
+    const openTotal = R.totals.openValue || rows.reduce((sum, row) => sum + (row.openValue || 0), 0);
+    const monthTotals = {};
+    months.forEach((month) => {
+      monthTotals[month.key] = rows.reduce((sum, row) => sum + (row.costs[month.key] || 0), 0);
+    });
+    const head = months.map((month) => `<th class="numcol">${esc(month.label)}</th>`).join("");
+    const body = rows.map((row) => {
+      const cells = months.map((month) => {
+        const cost = row.costs[month.key] || 0;
+        const total = monthTotals[month.key] || 0;
+        const share = total ? cost / total : null;
+        return `<td class="numcol">${num(cost, "money")}<span class="qty-meta">${num(share, "pct")} من الشهر</span></td>`;
+      }).join("");
+      return `<tr><td class="stick">${esc(row.name)}</td>${cells}</tr>`;
+    }).join("");
+    const foot = months.map((month) => {
+      const cost = monthTotals[month.key] || 0;
+      const ofOpen = openTotal ? cost / openTotal : null;
+      return `<td class="numcol">${num(cost, "money")}<span class="qty-meta">${num(ofOpen, "pct")} من الافتتاح</span></td>`;
+    }).join("");
+    return `<div class="table-wrap open"><table class="matrix">
+      <thead><tr><th class="stick">القطاع</th>${head}</tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot><tr><td class="stick">الإجمالي</td>${foot}</tr></tfoot>
+    </table></div>`;
+  }
 
   function renderHaraka() {
     const rows = R.sectors.map(sectorTrend);
-    const jul = R.totals.jul;
     const aug = R.totals.aug;
     const sep = R.totals.sep;
-    const p1 = (aug - jul) / jul;
-    const p2 = (sep - aug) / aug;
-    const pQ = (sep - jul) / jul;
+    const oct = R.totals.oct;
+    const p1 = (sep - aug) / aug;
+    const p2 = (oct - sep) / sep;
+    const pQ = (oct - aug) / aug;
     const count = (kind) => rows.filter((row) => row.kind === kind).length;
     const rising = rows.filter((row) => row.dQ > 0).length;
     const falling = rows.filter((row) => row.dQ < 0).length;
     const biggestUp = rows.slice().sort((a, b) => b.dQ - a.dQ)[0];
     const biggestDown = rows.slice().sort((a, b) => a.dQ - b.dQ)[0];
+    const costMonths = completeCostMonths();
+    const costMonthLabels = costMonths.map((month) => month.label).join(" و");
     const app = document.getElementById("app");
     app.innerHTML = `
       ${kpis([
-        { label: "يوليو", html: num(jul, "qty"), note: "صافي الكمية" },
-        { label: "أغسطس", html: num(aug, "qty"), note: num(p1, "deltaPct") + " عن يوليو" },
-        { label: "سبتمبر", html: num(sep, "qty"), note: num(p2, "deltaPct") + " عن أغسطس", tone: "good" },
-        { label: "من يوليو إلى سبتمبر", html: num(pQ, "deltaPct"), tone: "gold", note: num(sep - jul, "deltaQty") + " وحدة" },
+        { label: "أغسطس", html: num(aug, "qty"), note: "صافي الكمية" },
+        { label: "سبتمبر", html: num(sep, "qty"), note: num(p1, "deltaPct") + " عن أغسطس" },
+        { label: "أكتوبر", html: num(oct, "qty"), note: num(p2, "deltaPct") + " عن سبتمبر", tone: "good" },
+        { label: "من أغسطس إلى أكتوبر", html: num(pQ, "deltaPct"), tone: "gold", note: num(oct - aug, "deltaQty") + " وحدة" },
         { label: "قطاعات محصلتها تصاعد", html: num(rising, "qty"), tone: "good" },
         { label: "قطاعات محصلتها تقلص", html: num(falling, "qty"), tone: "bad" },
       ])}
       <div class="note">
-        المقارنة على الأشهر الثلاثة الكاملة: يوليو وأغسطس وسبتمبر. أكتوبر مستبعد لأنه يقف عند 30 أكتوبر.
-        الكمية صافية بعد المرتجعات. التصاعد المتصل يعني أن الكمية لم تنخفض في أي خطوة وسبتمبر أعلى من يوليو. التقلص المتصل عكس ذلك. إذا ارتفع شهر ثم انخفض الذي يليه، يُذكر الانعكاس ولو بقيت المحصلة موجبة.
+        المقارنة على الأشهر الثلاثة الكاملة: أغسطس وسبتمبر وأكتوبر.
+        الكمية صافية بعد المرتجعات. التصاعد المتصل يعني أن الكمية لم تنخفض في أي خطوة وأكتوبر أعلى من أغسطس. التقلص المتصل عكس ذلك. إذا ارتفع شهر ثم انخفض الذي يليه، يُذكر الانعكاس ولو بقيت المحصلة موجبة.
       </div>
       <section class="section">
         <h2>قراءة الحركة</h2>
-        <p>الكمية الصافية لكل القطاعات ارتفعت من ${num(jul, "qty")} في يوليو إلى ${num(aug, "qty")} في أغسطس (${num(p1, "deltaPct")})، ثم إلى ${num(sep, "qty")} في سبتمبر (${num(p2, "deltaPct")} عن أغسطس). المحصلة من يوليو إلى سبتمبر ${num(pQ, "deltaPct")}.</p>
+        <p>الكمية الصافية لكل القطاعات انتقلت من ${num(aug, "qty")} في أغسطس إلى ${num(sep, "qty")} في سبتمبر (${num(p1, "deltaPct")})، ثم إلى ${num(oct, "qty")} في أكتوبر (${num(p2, "deltaPct")} عن سبتمبر). المحصلة من أغسطس إلى أكتوبر ${num(pQ, "deltaPct")}.</p>
         <p>تصاعد متصل في ${num(count("up"), "qty")} من القطاعات، وتقلص متصل في ${num(count("down"), "qty")}، وانعكاس بين الشهرين في ${num(count("turn"), "qty")}. أكبر زيادة كمية في ${esc(biggestUp.name)} (${num(biggestUp.dQ, "deltaQty")} وحدة، ${num(biggestUp.pQ, "deltaPct")}). أكبر تراجع كمي في ${esc(biggestDown.name)} (${num(biggestDown.dQ, "deltaQty")} وحدة، ${num(biggestDown.pQ, "deltaPct")}).</p>
+      </section>
+      <section class="section">
+        <h2>تكلفة المباع حسب القطاع والشهر</h2>
+        <p class="lead">لكل شهر مكتمل: تكلفة المباع، ونسبتها من إجمالي تكلفة المباع في ذلك الشهر. صف الإجمالي يعرض مجموع الشهر ونسبته من إجمالي تكلفة الافتتاح. الأشهر المعروضة الآن: ${esc(costMonthLabels)}.</p>
+        <p class="scroll-hint">يُضاف عمود الشهر الجديد بعد اكتمال الشهر في بيانات التقرير.</p>
+        <div id="month-cost-table">${monthCostMatrixHtml()}</div>
       </section>
       <section class="section">
         <div class="pair">
           <div>
             <h2>التغير بالكمية</h2>
-            <p class="lead">سبتمبر ناقص يوليو. الشريط الأخضر تصاعد، والأحمر تقلص.</p>
+            <p class="lead">أكتوبر ناقص أغسطس. الشريط الأخضر تصاعد، والأحمر تقلص.</p>
             <div id="qty-bars"></div>
           </div>
           <div>
             <h2>التغير بالنسبة</h2>
-            <p class="lead">نسبة سبتمبر إلى يوليو. الشريط يمتد حتى 150٪، وما زاد عن ذلك يملأ الشريط وتبقى النسبة مكتوبة. النسبة تكبر في القطاعات الصغيرة حتى لو كانت الكمية المضافة قليلة.</p>
+            <p class="lead">نسبة أكتوبر إلى أغسطس. الشريط يمتد حتى 150٪، وما زاد عن ذلك يملأ الشريط وتبقى النسبة مكتوبة. النسبة تكبر في القطاعات الصغيرة حتى لو كانت الكمية المضافة قليلة.</p>
             <div id="pace-bars"></div>
           </div>
         </div>
@@ -1112,7 +1200,7 @@
           <button type="button" data-view="turn" aria-pressed="false">انعكاس</button>
         </div>
         <p class="meta-line" id="trend-meta"></p>
-        <p class="scroll-hint">انقر عنوان العمود للترتيب. المسار يرسم يوليو ثم أغسطس ثم سبتمبر.</p>
+        <p class="scroll-hint">انقر عنوان العمود للترتيب. المسار يرسم أغسطس ثم سبتمبر ثم أكتوبر.</p>
         <div id="trend-table"></div>
       </section>`;
 
@@ -1156,7 +1244,7 @@
     [7, "يوليو"],
     [8, "أغسطس"],
     [9, "سبتمبر"],
-    [10, "أكتوبر (جزئي)"],
+    [10, "أكتوبر"],
   ];
 
   function monthOptions() {
@@ -1184,7 +1272,7 @@
     app.innerHTML = `
       <div id="branch-kpis"></div>
       <p id="filter-banner" class="note" hidden></p>
-      <div class="note">المخزون رصيد حالي للأصناف الراكدة، ولا يتغير عند اختيار شهر. التصفية بالشهر تغيّر المبيعات فقط. أكتوبر يقف عند 30 أكتوبر.</div>
+      <div class="note">المخزون رصيد حالي للأصناف الراكدة، ولا يتغير عند اختيار شهر. التصفية بالشهر تغيّر المبيعات فقط. أكتوبر مكتمل حتى 31 أكتوبر.</div>
       <section class="section">
         <div class="toolbar">
           <label class="field">القطاع
@@ -2294,7 +2382,8 @@
     }
 
     function closeStockOf(item) {
-      const parts = Array.isArray(item.sepStock) ? item.sepStock : [item.sepStock || 0, 0];
+      const source = item.closeStock || item.sepStock;
+      const parts = Array.isArray(source) ? source : [source || 0, 0];
       if (state.company === "atwar") return parts[0] || 0;
       if (state.company === "tirador") return parts[1] || 0;
       return (parts[0] || 0) + (parts[1] || 0);
@@ -2326,7 +2415,7 @@
         });
       }
       list.push({ key: "qty", label: "إجمالي الكمية المباعة", type: "num", html: (row) => qtyCell(row.qty, row.sales, row.margin) });
-      list.push({ key: "closeStock", label: "إجمالي مخزون نهاية سبتمبر", type: "num", html: (row) => num(row.closeStock, "qty") });
+      list.push({ key: "closeStock", label: "إجمالي مخزون نهاية أكتوبر", type: "num", html: (row) => num(row.closeStock, "qty") });
       list.push({ key: "margin", label: "متوسط الربحية", type: "num", html: (row) => num(row.margin, "deltaPct") });
       list.push({ key: "age", label: "عمر المخزون", type: "num", html: (row) => ageText(row.age) });
       return list;
@@ -2389,7 +2478,7 @@
       const stockNote = state.company === "atwar" ? "مستودعات أطوار والمناديب" : state.company === "tirador" ? "مستودعات تيرادور" : "أطوار والمناديب وتيرادور";
       document.getElementById("tahlil-kpis").innerHTML = kpis([
         { label: "الأصناف", html: num(view.length, "qty") },
-        { label: "مخزون نهاية سبتمبر", html: num(closeStock, "qty"), note: stockNote },
+        { label: "مخزون نهاية أكتوبر", html: num(closeStock, "qty"), note: stockNote },
         { label: "إجمالي الكمية المباعة", html: num(qty, "qty"), note: `${monthName(state.from)} إلى ${monthName(state.to)}` },
         { label: "متوسط الحركة الشهرية", html: num(monthly, "qty") },
         { label: "عمر المخزون", html: ageText(age), note: "شهر للمتبقي" },
@@ -2552,6 +2641,7 @@
       sector: "all",
       subSector: "all",
       group: "all",
+      priceMismatch: false,
       sort: "sku",
       dir: 1,
     };
@@ -2559,6 +2649,11 @@
     const subSectors = [...new Set(list.map((row) => row.subSector).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
     const asOf = R.meta.monthStockAsOf || "2026-10-31";
     const asOfLabel = asOf === "2026-10-31" ? "31 أكتوبر 2026" : asOf;
+
+    function priceMismatch(row) {
+      const approved = row.approvedPrice;
+      return finite(approved) && Math.abs(approved) > 1e-9 && finite(row.systemPrice) && Math.abs(row.systemPrice - approved) > 1e-9;
+    }
 
     const columns = [
       { key: "sku", label: "رقم الصنف", type: "text", stick: true, html: (row) => `<span class="sku">${esc(row.sku)}</span>` },
@@ -2579,9 +2674,7 @@
         type: "num",
         html: (row) => {
           const price = num(row.systemPrice, "money");
-          const approved = row.approvedPrice;
-          const mismatch = finite(approved) && Math.abs(approved) > 1e-9 && finite(row.systemPrice) && Math.abs(row.systemPrice - approved) > 1e-9;
-          return mismatch ? `<span class="neg">${price}</span>` : price;
+          return priceMismatch(row) ? `<span class="neg">${price}</span>` : price;
         },
       },
     ];
@@ -2592,6 +2685,7 @@
         if (state.sector !== "all" && row.sector !== state.sector) return false;
         if (state.subSector !== "all" && row.subSector !== state.subSector) return false;
         if (state.group !== "all" && String(row.group) !== String(state.group)) return false;
+        if (state.priceMismatch && !priceMismatch(row)) return false;
         if (!query) return true;
         return row.sku.includes(query) || (row.name || "").includes(query) || (row.sector || "").includes(query) || (row.subSector || "").includes(query);
       });
@@ -2614,7 +2708,8 @@
       const sectorLabel = state.sector === "all" ? "كل القطاعات" : state.sector;
       const subLabel = state.subSector === "all" ? "كل القطاعات الفرعية" : state.subSector;
       const groupLabel = state.group === "all" ? "كل المجموعات" : (R.groups.find((group) => String(group.id) === String(state.group)) || { name: state.group }).name;
-      document.getElementById("qaemat-banner").textContent = `التصفية المطبقة: ${sectorLabel}، ${subLabel}، ${groupLabel}${state.q.trim() ? `، بحث «${state.q.trim()}»` : ""}.`;
+      const mismatchLabel = state.priceMismatch ? "، أسعار النظام المخالفة فقط" : "";
+      document.getElementById("qaemat-banner").textContent = `التصفية المطبقة: ${sectorLabel}، ${subLabel}، ${groupLabel}${state.q.trim() ? `، بحث «${state.q.trim()}»` : ""}${mismatchLabel}.`;
       document.getElementById("qaemat-meta").innerHTML = `المعروض ${num(view.length, "qty")} من ${num(list.length, "qty")} صنفاً.`;
       mountTable(document.getElementById("qaemat-table"), columns, sorted, state, draw);
       const wrap = document.querySelector("#qaemat-table .table-wrap");
@@ -2624,6 +2719,7 @@
     const sectorOptions = sectors.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
     const subOptions = subSectors.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
     const groupButtons = R.groups.map((group) => `<button type="button" data-group="${group.id}" aria-pressed="false">${esc(group.name)}</button>`).join("");
+    const mismatchCount = list.filter(priceMismatch).length;
 
     app.innerHTML = `
       <div id="qaemat-kpis"></div>
@@ -2641,6 +2737,13 @@
             <select id="qaemat-sub"><option value="all">كل القطاعات الفرعية</option>${subOptions}</select>
           </label>
         </div>
+        <label class="check-option">
+          <input type="checkbox" id="qaemat-mismatch">
+          <span>
+            عرض أسعار النظام المخالفة فقط
+            <small>الأصناف ذات السعر المعتمد غير الصفري والمختلف عن سعر النظام (${fmtQty(mismatchCount)} صنفاً).</small>
+          </span>
+        </label>
         <div class="chips" id="qaemat-groups">
           <button type="button" data-group="all" aria-pressed="true">كل المجموعات</button>
           ${groupButtons}
@@ -2662,6 +2765,10 @@
       state.subSector = event.target.value;
       draw();
     });
+    document.getElementById("qaemat-mismatch").addEventListener("change", (event) => {
+      state.priceMismatch = event.target.checked;
+      draw();
+    });
     document.getElementById("qaemat-groups").addEventListener("click", (event) => {
       const button = event.target.closest("button");
       if (!button) return;
@@ -2680,7 +2787,7 @@
     const monthKey = { 7: "jul", 8: "aug", 9: "sep", 10: "oct" };
     const targets = [
       { id: "2026-q3", label: "الربع الثالث 2026", rate: 0.1, months: [7, 8, 9], span: "يوليو إلى سبتمبر", partial: false },
-      { id: "2026-q4", label: "الربع الرابع 2026", rate: 0.2, months: [10], span: "حتى 30 أكتوبر", partial: true },
+      { id: "2026-q4", label: "الربع الرابع 2026", rate: 0.2, months: [10], span: "أكتوبر", partial: false },
     ];
     const bases = new Map();
     R.items.forEach((item) => {
@@ -2763,9 +2870,11 @@
       const cleared = rows.reduce((sum, row) => sum + row.cleared, 0);
       const goal = openValue * target.rate;
       const rate = goal ? cleared / goal : null;
-      root.querySelector("#injaz-banner").textContent = target.partial
-        ? `${target.label} جزئي، ويغطي ${target.span}. نوفمبر وديسمبر لم يدخلا بعد.`
-        : `${target.label} مكتمل، ويغطي ${target.span}.`;
+      root.querySelector("#injaz-banner").textContent = target.id === "2026-q4"
+        ? `${target.label} يغطي ${target.span} حتى الآن. نوفمبر وديسمبر لم يدخلا بعد.`
+        : target.partial
+          ? `${target.label} جزئي، ويغطي ${target.span}.`
+          : `${target.label} مكتمل، ويغطي ${target.span}.`;
       root.querySelector("#injaz-summary").innerHTML = `
         <div class="summary-row">
           ${donutCard(rate, `إنجاز ${target.label}`, `${fmtMoney(cleared)} من مستهدف ${fmtMoney(goal)}`)}
