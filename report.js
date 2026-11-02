@@ -1197,29 +1197,52 @@
 
   function renderHaraka() {
     const rows = R.sectors.map(sectorTrend);
-    const aug = R.totals.aug;
-    const sep = R.totals.sep;
-    const oct = R.totals.oct;
-    const p1 = (sep - aug) / aug;
-    const p2 = (oct - sep) / sep;
-    const pQ = (oct - aug) / aug;
-    const rising = rows.filter((row) => row.dQ > 0).length;
-    const falling = rows.filter((row) => row.dQ < 0).length;
     const costBundle = monthCostBundle();
     const costMonths = costBundle.months;
     const costMonthLabels = costMonths.map((month) => month.label).join(" و");
+    const prevMonth = costMonths.length > 1 ? costMonths[costMonths.length - 2] : null;
+    const lastMonth = costMonths.length ? costMonths[costMonths.length - 1] : null;
+    const prevCost = prevMonth ? costBundle.monthTotals[prevMonth.key] || 0 : 0;
+    const lastCost = lastMonth ? costBundle.monthTotals[lastMonth.key] || 0 : 0;
+    const costDelta = lastCost - prevCost;
+    const costPct = prevCost ? costDelta / Math.abs(prevCost) : null;
+    const prevQty = prevMonth ? R.totals[prevMonth.key] || 0 : 0;
+    const lastQty = lastMonth ? R.totals[lastMonth.key] || 0 : 0;
+    const qtyDelta = lastQty - prevQty;
+    const qtyPct = prevQty ? qtyDelta / Math.abs(prevQty) : null;
+    const stepRising = costBundle.rows.filter((row) => row.stepDelta > 0.005).length;
+    const stepFalling = costBundle.rows.filter((row) => row.stepDelta < -0.005).length;
+    const lastOfOpen = costBundle.openTotal ? lastCost / costBundle.openTotal : null;
+    const compareNote = prevMonth && lastMonth
+      ? `البطاقات تقارن ${lastMonth.label} بالشهر الذي يسبقه (${prevMonth.label}).`
+      : "البطاقات تعرض آخر شهر مكتمل عند توفر شهر سابق للمقارنة.";
     const app = document.getElementById("app");
     app.innerHTML = `
       ${kpis([
-        { label: "أغسطس", html: num(aug, "qty"), note: "صافي الكمية" },
-        { label: "سبتمبر", html: num(sep, "qty"), note: num(p1, "deltaPct") + " عن أغسطس" },
-        { label: "أكتوبر", html: num(oct, "qty"), note: num(p2, "deltaPct") + " عن سبتمبر", tone: "good" },
-        { label: "من أغسطس إلى أكتوبر", html: num(pQ, "deltaPct"), tone: "gold", note: num(oct - aug, "deltaQty") + " وحدة" },
-        { label: "قطاعات محصلتها تصاعد", html: num(rising, "qty"), tone: "good" },
-        { label: "قطاعات محصلتها تقلص", html: num(falling, "qty"), tone: "bad" },
+        { label: prevMonth ? prevMonth.label : "الشهر السابق", html: num(prevCost, "money"), note: `كمية ${fmtQty(prevQty)}` },
+        {
+          label: lastMonth ? lastMonth.label : "آخر شهر",
+          html: num(lastCost, "money"),
+          note: prevMonth ? `${num(costPct, "deltaPct")} عن ${prevMonth.label}` : `كمية ${fmtQty(lastQty)}`,
+          tone: costDelta >= 0 ? "good" : "bad",
+        },
+        {
+          label: "التغير بالتكلفة",
+          html: num(costDelta, "money"),
+          note: prevMonth && lastMonth ? `${prevMonth.label} → ${lastMonth.label}` : "يلزم شهران مكتملان",
+          tone: costDelta >= 0 ? "good" : "bad",
+        },
+        {
+          label: "التغير بالكمية",
+          html: num(qtyDelta, "deltaQty"),
+          note: num(qtyPct, "deltaPct"),
+          tone: qtyDelta >= 0 ? "good" : "bad",
+        },
+        { label: "قطاعات صاعدة عن السابق", html: num(stepRising, "qty"), tone: "good", note: lastMonth && prevMonth ? `${lastMonth.label} مقابل ${prevMonth.label}` : "" },
+        { label: "قطاعات هابطة عن السابق", html: num(stepFalling, "qty"), tone: "bad", note: `حصة آخر شهر من الافتتاح ${fmtPct(lastOfOpen)}` },
       ])}
       <div class="note">
-        المقارنة الكمية على الأشهر الثلاثة الكاملة: أغسطس وسبتمبر وأكتوبر.
+        ${esc(compareNote)}
         ملخص قراءة الحركة أدناه مبني على تكلفة المباع للأشهر المكتملة في الجدول.
       </div>
       <section class="section">
