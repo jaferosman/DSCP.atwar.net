@@ -1106,15 +1106,37 @@
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "ar"));
   }
 
-  function monthCostMatrixHtml() {
+  function monthCostBundle() {
     const months = completeCostMonths();
-    if (!months.length) return `<p class="lead">لا توجد أشهر مكتملة لعرض تكلفة المباع.</p>`;
     const rows = monthCostBySector(months);
     const openTotal = R.totals.openValue || rows.reduce((sum, row) => sum + (row.openValue || 0), 0);
     const monthTotals = {};
     months.forEach((month) => {
       monthTotals[month.key] = rows.reduce((sum, row) => sum + (row.costs[month.key] || 0), 0);
     });
+    const enriched = rows.map((row) => {
+      const cleared = months.reduce((sum, month) => sum + (row.costs[month.key] || 0), 0);
+      const first = months[0] ? row.costs[months[0].key] || 0 : 0;
+      const last = months.length ? row.costs[months[months.length - 1].key] || 0 : 0;
+      const prev = months.length > 1 ? row.costs[months[months.length - 2].key] || 0 : 0;
+      return {
+        ...row,
+        cleared,
+        ofOpen: row.openValue ? cleared / row.openValue : null,
+        spanDelta: last - first,
+        spanPct: first ? (last - first) / Math.abs(first) : null,
+        stepDelta: last - prev,
+        stepPct: prev ? (last - prev) / Math.abs(prev) : null,
+      };
+    });
+    const clearedTotal = enriched.reduce((sum, row) => sum + row.cleared, 0);
+    return { months, rows: enriched, openTotal, monthTotals, clearedTotal };
+  }
+
+  function monthCostMatrixHtml(bundle) {
+    const data = bundle || monthCostBundle();
+    const { months, rows, openTotal, monthTotals, clearedTotal } = data;
+    if (!months.length) return `<p class="lead">لا توجد أشهر مكتملة لعرض تكلفة المباع.</p>`;
     const head = months.map((month) => `<th class="numcol">${esc(month.label)}</th>`).join("");
     const body = rows.map((row) => {
       const cells = months.map((month) => {
@@ -1123,18 +1145,54 @@
         const share = total ? cost / total : null;
         return `<td class="numcol">${num(cost, "money")}<span class="qty-meta">${num(share, "pct")} من الشهر</span></td>`;
       }).join("");
-      return `<tr><td class="stick">${esc(row.name)}</td>${cells}</tr>`;
+      return `<tr><td class="stick">${esc(row.name)}<span class="qty-meta">${num(row.cleared, "money")} · ${num(row.ofOpen, "pct")} من افتتاح القطاع</span></td>${cells}</tr>`;
     }).join("");
     const foot = months.map((month) => {
       const cost = monthTotals[month.key] || 0;
       const ofOpen = openTotal ? cost / openTotal : null;
       return `<td class="numcol">${num(cost, "money")}<span class="qty-meta">${num(ofOpen, "pct")} من الافتتاح</span></td>`;
     }).join("");
+    const footOpen = openTotal ? clearedTotal / openTotal : null;
     return `<div class="table-wrap open"><table class="matrix">
       <thead><tr><th class="stick">القطاع</th>${head}</tr></thead>
       <tbody>${body}</tbody>
-      <tfoot><tr><td class="stick">الإجمالي</td>${foot}</tr></tfoot>
+      <tfoot><tr><td class="stick">الإجمالي<span class="qty-meta">${num(clearedTotal, "money")} · ${num(footOpen, "pct")} من الافتتاح</span></td>${foot}</tr></tfoot>
     </table></div>`;
+  }
+
+  function costReadingHtml(bundle) {
+    const { months, rows, openTotal, monthTotals, clearedTotal } = bundle;
+    if (!months.length) return `<p>لا توجد أشهر مكتملة لتلخيص تكلفة المباع.</p>`;
+    const path = months.map((month) => `${esc(month.label)} ${num(monthTotals[month.key], "money")}`).join("، ثم ");
+    const first = months[0];
+    const last = months[months.length - 1];
+    const firstTotal = monthTotals[first.key] || 0;
+    const lastTotal = monthTotals[last.key] || 0;
+    const spanPct = firstTotal ? (lastTotal - firstTotal) / Math.abs(firstTotal) : null;
+    const ofOpen = openTotal ? clearedTotal / openTotal : null;
+    const rising = rows.filter((row) => row.spanDelta > 0.005).length;
+    const falling = rows.filter((row) => row.spanDelta < -0.005).length;
+    const topUp = rows.filter((row) => row.spanDelta > 0).slice().sort((a, b) => b.spanDelta - a.spanDelta).slice(0, 3);
+    const topDown = rows.filter((row) => row.spanDelta < 0).slice().sort((a, b) => a.spanDelta - b.spanDelta).slice(0, 3);
+    const topCleared = rows.slice().sort((a, b) => (b.ofOpen || -1) - (a.ofOpen || -1))[0];
+    function sectorList(list) {
+      if (!list.length) return "لا يوجد";
+      return list.map((row) => `${esc(row.name)} (${num(row.spanDelta, "money")}، ${num(row.spanPct, "deltaPct")})`).join("، ");
+    }
+    let stepNote = "";
+    if (months.length > 1) {
+      const prev = months[months.length - 2];
+      const prevTotal = monthTotals[prev.key] || 0;
+      const stepPct = prevTotal ? (lastTotal - prevTotal) / Math.abs(prevTotal) : null;
+      const stepUp = rows.filter((row) => row.stepDelta > 0).slice().sort((a, b) => b.stepDelta - a.stepDelta)[0];
+      const stepDown = rows.filter((row) => row.stepDelta < 0).slice().sort((a, b) => a.stepDelta - b.stepDelta)[0];
+      stepNote = `<p>من ${esc(prev.label)} إلى ${esc(last.label)} تحركت تكلفة المباع الإجمالية ${num(lastTotal - prevTotal, "money")} (${num(stepPct, "deltaPct")}). أبرز نمو شهري في ${esc(stepUp ? stepUp.name : "—")} (${num(stepUp ? stepUp.stepDelta : null, "money")})، وأبرز تراجع في ${esc(stepDown ? stepDown.name : "—")} (${num(stepDown ? stepDown.stepDelta : null, "money")}).</p>`;
+    }
+    return `
+      <p>تكلفة المباع عبر الأشهر المكتملة: ${path}. المحصلة من ${esc(first.label)} إلى ${esc(last.label)} ${num(spanPct, "deltaPct")} (${num(lastTotal - firstTotal, "money")}). إجمالي التصريف ${num(clearedTotal, "money")} بما يعادل ${num(ofOpen, "pct")} من تكلفة الافتتاح.</p>
+      <p>من ${esc(first.label)} إلى ${esc(last.label)}: تصاعدت تكلفة المباع في ${num(rising, "qty")} قطاعاً، وتراجعت في ${num(falling, "qty")}. أبرز القطاعات نمواً: ${sectorList(topUp)}. أبرز القطاعات تراجعاً: ${sectorList(topDown)}.</p>
+      ${stepNote}
+      <p>أعلى نسبة تصريف من افتتاح القطاع: ${esc(topCleared ? topCleared.name : "—")} بمعدل ${num(topCleared ? topCleared.ofOpen : null, "pct")} (${num(topCleared ? topCleared.cleared : null, "money")}).</p>`;
   }
 
   function renderHaraka() {
@@ -1145,12 +1203,10 @@
     const p1 = (sep - aug) / aug;
     const p2 = (oct - sep) / sep;
     const pQ = (oct - aug) / aug;
-    const count = (kind) => rows.filter((row) => row.kind === kind).length;
     const rising = rows.filter((row) => row.dQ > 0).length;
     const falling = rows.filter((row) => row.dQ < 0).length;
-    const biggestUp = rows.slice().sort((a, b) => b.dQ - a.dQ)[0];
-    const biggestDown = rows.slice().sort((a, b) => a.dQ - b.dQ)[0];
-    const costMonths = completeCostMonths();
+    const costBundle = monthCostBundle();
+    const costMonths = costBundle.months;
     const costMonthLabels = costMonths.map((month) => month.label).join(" و");
     const app = document.getElementById("app");
     app.innerHTML = `
@@ -1163,19 +1219,18 @@
         { label: "قطاعات محصلتها تقلص", html: num(falling, "qty"), tone: "bad" },
       ])}
       <div class="note">
-        المقارنة على الأشهر الثلاثة الكاملة: أغسطس وسبتمبر وأكتوبر.
-        الكمية صافية بعد المرتجعات. التصاعد المتصل يعني أن الكمية لم تنخفض في أي خطوة وأكتوبر أعلى من أغسطس. التقلص المتصل عكس ذلك. إذا ارتفع شهر ثم انخفض الذي يليه، يُذكر الانعكاس ولو بقيت المحصلة موجبة.
+        المقارنة الكمية على الأشهر الثلاثة الكاملة: أغسطس وسبتمبر وأكتوبر.
+        ملخص قراءة الحركة أدناه مبني على تكلفة المباع للأشهر المكتملة في الجدول.
       </div>
       <section class="section">
         <h2>قراءة الحركة</h2>
-        <p>الكمية الصافية لكل القطاعات انتقلت من ${num(aug, "qty")} في أغسطس إلى ${num(sep, "qty")} في سبتمبر (${num(p1, "deltaPct")})، ثم إلى ${num(oct, "qty")} في أكتوبر (${num(p2, "deltaPct")} عن سبتمبر). المحصلة من أغسطس إلى أكتوبر ${num(pQ, "deltaPct")}.</p>
-        <p>تصاعد متصل في ${num(count("up"), "qty")} من القطاعات، وتقلص متصل في ${num(count("down"), "qty")}، وانعكاس بين الشهرين في ${num(count("turn"), "qty")}. أكبر زيادة كمية في ${esc(biggestUp.name)} (${num(biggestUp.dQ, "deltaQty")} وحدة، ${num(biggestUp.pQ, "deltaPct")}). أكبر تراجع كمي في ${esc(biggestDown.name)} (${num(biggestDown.dQ, "deltaQty")} وحدة، ${num(biggestDown.pQ, "deltaPct")}).</p>
+        ${costReadingHtml(costBundle)}
       </section>
       <section class="section">
         <h2>تكلفة المباع حسب القطاع والشهر</h2>
-        <p class="lead">لكل شهر مكتمل: تكلفة المباع، ونسبتها من إجمالي تكلفة المباع في ذلك الشهر. صف الإجمالي يعرض مجموع الشهر ونسبته من إجمالي تكلفة الافتتاح. الأشهر المعروضة الآن: ${esc(costMonthLabels)}.</p>
+        <p class="lead">بجانب اسم القطاع: إجمالي تكلفة التصريف للأشهر المعروضة ونسبته من تكلفة افتتاح القطاع. لكل شهر مكتمل: تكلفة المباع ونسبتها من إجمالي ذلك الشهر. صف الإجمالي يعرض مجموع الشهر ونسبته من إجمالي تكلفة الافتتاح. الأشهر المعروضة الآن: ${esc(costMonthLabels)}.</p>
         <p class="scroll-hint">يُضاف عمود الشهر الجديد بعد اكتمال الشهر في بيانات التقرير.</p>
-        <div id="month-cost-table">${monthCostMatrixHtml()}</div>
+        <div id="month-cost-table">${monthCostMatrixHtml(costBundle)}</div>
       </section>
       <section class="section">
         <div class="pair">
