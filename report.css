@@ -297,13 +297,21 @@ input[type="search"] { min-width: min(22rem, 70vw); }
 
 .chips button,
 .switch button,
-.pager button {
+.pager button,
+button.action {
   font: inherit;
   background: #fff;
   color: var(--ink);
   border: 1px solid var(--line);
   padding: 0.32rem 0.65rem;
   cursor: pointer;
+}
+
+button.action {
+  background: var(--deep);
+  color: #fff;
+  border-color: var(--deep);
+  padding: 0.42rem 0.85rem;
 }
 
 .chips button[aria-pressed="true"],

@@ -2723,6 +2723,7 @@
       sort: "sku",
       dir: 1,
     };
+    const summaryState = { sort: "sku", dir: -1 };
     const sectors = [...new Set(list.map((row) => row.sector).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
     const subSectors = [...new Set(list.map((row) => row.subSector).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
     const asOf = R.meta.monthStockAsOf || "2026-10-31";
@@ -2731,6 +2732,38 @@
     function priceMismatch(row) {
       const approved = row.approvedPrice;
       return finite(approved) && Math.abs(approved) > 1e-9 && finite(row.systemPrice) && Math.abs(row.systemPrice - approved) > 1e-9;
+    }
+
+    function hasApproved(row) {
+      return row.approvedPrice != null && finite(row.approvedPrice);
+    }
+
+    const summaryColumns = [
+      { key: "sector", label: "القطاع", type: "text", stick: true, clip: true, html: (row) => esc(row.sector) },
+      { key: "sku", label: "عدد الأصناف", type: "num", html: (row) => num(row.sku, "qty") },
+      { key: "approved", label: "بأسعار معتمدة", type: "num", html: (row) => num(row.approved, "qty") },
+      { key: "mismatch", label: "أسعار نظام غير مطابقة", type: "num", html: (row) => num(row.mismatch, "qty") },
+      { key: "missing", label: "بدون أسعار معتمدة", type: "num", html: (row) => num(row.missing, "qty") },
+    ];
+
+    function sectorSummary() {
+      const map = new Map();
+      list.forEach((row) => {
+        const name = row.sector || "بدون قطاع";
+        let rec = map.get(name);
+        if (!rec) {
+          rec = { sector: name, sku: 0, approved: 0, mismatch: 0, missing: 0 };
+          map.set(name, rec);
+        }
+        rec.sku += 1;
+        if (hasApproved(row)) {
+          rec.approved += 1;
+          if (priceMismatch(row)) rec.mismatch += 1;
+        } else {
+          rec.missing += 1;
+        }
+      });
+      return [...map.values()];
     }
 
     const columns = [
@@ -2769,6 +2802,25 @@
       });
     }
 
+    function drawSummary() {
+      const summary = sectorSummary();
+      const totals = summary.reduce(
+        (acc, row) => {
+          acc.sku += row.sku;
+          acc.approved += row.approved;
+          acc.mismatch += row.mismatch;
+          acc.missing += row.missing;
+          return acc;
+        },
+        { sku: 0, approved: 0, mismatch: 0, missing: 0 },
+      );
+      mountTable(document.getElementById("qaemat-summary"), summaryColumns, summary, summaryState, drawSummary);
+      const wrap = document.querySelector("#qaemat-summary .table-wrap");
+      if (wrap) wrap.classList.add("open");
+      document.getElementById("qaemat-summary-meta").innerHTML =
+        `القطاعات ${num(summary.length, "qty")}. أصناف ${num(totals.sku, "qty")}، بأسعار معتمدة ${num(totals.approved, "qty")}، غير مطابقة ${num(totals.mismatch, "qty")}، بدون معتمد ${num(totals.missing, "qty")}.`;
+    }
+
     function draw() {
       const view = rows();
       const sorted = sortRows(view, columns, state.sort, state.dir);
@@ -2780,7 +2832,7 @@
         { label: "المخزون الافتتاحي", html: num(openQty, "qty") },
         { label: "مخزون نهاية أكتوبر", html: num(monthTotal, "qty"), note: asOfLabel },
         { label: "كمية التصريف", html: num(clearQty, "deltaQty"), note: "افتتاح − نهاية الشهر" },
-        { label: "بأسعار معتمدة", html: num(view.filter((row) => row.approvedPrice != null).length, "qty") },
+        { label: "بأسعار معتمدة", html: num(view.filter((row) => hasApproved(row)).length, "qty") },
         { label: "بسعر نظام أطوار", html: num(view.filter((row) => row.systemPrice != null).length, "qty") },
       ]);
       const sectorLabel = state.sector === "all" ? "كل القطاعات" : state.sector;
@@ -2802,6 +2854,13 @@
     app.innerHTML = `
       <div id="qaemat-kpis"></div>
       <p id="qaemat-banner" class="note"></p>
+      <section class="section">
+        <h2>ملخص القطاعات</h2>
+        <p class="lead">عدد الأصناف لكل قطاع، وما له سعر معتمد، وما سعر نظامه غير مطابق للمعتمد، وما بلا سعر معتمد.</p>
+        <p class="meta-line" id="qaemat-summary-meta"></p>
+        <p class="scroll-hint">انقر عنوان العمود للترتيب.</p>
+        <div id="qaemat-summary"></div>
+      </section>
       <section class="section">
         <h2>قائمة الأصناف الراكدة</h2>
         <div class="toolbar">
@@ -2826,10 +2885,64 @@
           <button type="button" data-group="all" aria-pressed="true">كل المجموعات</button>
           ${groupButtons}
         </div>
+        <div class="toolbar">
+          <button type="button" id="qaemat-export" class="action">تصدير أسعار البيع إلى إكسل</button>
+        </div>
         <p class="meta-line" id="qaemat-meta"></p>
         <p class="scroll-hint">مخزون نهاية الشهر حتى ${esc(asOfLabel)}. سعر النظام = أقل شريحة في قائمة سعر بيع عملاء أطوار. انقر عنوان العمود للترتيب.</p>
         <div id="qaemat-table"></div>
       </section>`;
+
+    function exportPriceWorkbook() {
+      const view = sortRows(rows(), columns, state.sort, state.dir);
+      const headers = [
+        "رقم الصنف",
+        "الوصف",
+        "القطاع الرئيسي",
+        "القطاع الفرعي",
+        "مجموعة الرواكد",
+        "سعر البيع المعتمد",
+        "سعر البيع في النظام",
+      ];
+      function cellXml(value) {
+        if (value == null || value === "") return `<Cell><Data ss:Type="String"></Data></Cell>`;
+        if (typeof value === "number" && Number.isFinite(value)) {
+          return `<Cell><Data ss:Type="Number">${value}</Data></Cell>`;
+        }
+        return `<Cell><Data ss:Type="String">${esc(value)}</Data></Cell>`;
+      }
+      const body = view.map((row) => {
+        const values = [
+          row.sku,
+          row.name,
+          row.sector,
+          row.subSector,
+          row.groupName,
+          row.approvedPrice == null ? "" : row.approvedPrice,
+          row.systemPrice == null ? "" : row.systemPrice,
+        ];
+        return `<Row>${values.map(cellXml).join("")}</Row>`;
+      }).join("");
+      const head = `<Row>${headers.map((label) => `<Cell><Data ss:Type="String">${esc(label)}</Data></Cell>`).join("")}</Row>`;
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Worksheet ss:Name="أسعار الرواكد">
+  <Table>${head}${body}</Table>
+ </Worksheet>
+</Workbook>`;
+      const blob = new Blob([xml], { type: "application/vnd.ms-excel;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const stamp = new Date().toISOString().slice(0, 10);
+      link.href = url;
+      link.download = `أسعار_الرواكد_${stamp}.xls`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
 
     document.getElementById("qaemat-q").addEventListener("input", (event) => {
       state.q = event.target.value;
@@ -2856,6 +2969,8 @@
       });
       draw();
     });
+    document.getElementById("qaemat-export").addEventListener("click", exportPriceWorkbook);
+    drawSummary();
     draw();
   }
 
