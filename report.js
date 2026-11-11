@@ -224,7 +224,7 @@
     app.innerHTML = `
       ${kpis([
         { label: "كمية المخزون الافتتاحي", html: num(t.openQty, "qty"), note: "وحدة" },
-        { label: "كمية المباع", html: num(t.netQty, "qty"), note: "يوليو إلى 31 أكتوبر" },
+        { label: "كمية المباع", html: num(t.netQty, "qty"), note: R.meta.period.replace("1 يوليو 2026 — ", "يوليو إلى ").replace("2026", "").trim() },
         { label: "إنجاز الكمية", html: rate(t.qtyRate), tone: "gold", note: "المباع من الافتتاح" },
         { label: "تكلفة المخزون الافتتاحي", html: num(t.openValue, "money"), note: "بالتكلفة" },
         { label: "تكلفة المباع", html: num(t.cogs, "money"), note: "كمية مباعة × تكلفة الحبة" },
@@ -919,7 +919,7 @@
         </div>
         <section class="section">
           <h2>الربح حسب الشهر</h2>
-          <p class="lead">أكتوبر مكتمل حتى 31 أكتوبر 2026.</p>
+          <p class="lead">${esc(R.meta.periodNote)}</p>
           <div class="table-wrap">
             <table>
               <thead>
@@ -1323,6 +1323,7 @@
     [8, "أغسطس"],
     [9, "سبتمبر"],
     [10, "أكتوبر"],
+    [11, "نوفمبر (جزئي)"],
   ];
 
   function monthOptions() {
@@ -1350,7 +1351,7 @@
     app.innerHTML = `
       <div id="branch-kpis"></div>
       <p id="filter-banner" class="note" hidden></p>
-      <div class="note">المخزون رصيد حالي للأصناف الراكدة، ولا يتغير عند اختيار شهر. التصفية بالشهر تغيّر المبيعات فقط. أكتوبر مكتمل حتى 31 أكتوبر.</div>
+      <div class="note">المخزون رصيد حالي للأصناف الراكدة، ولا يتغير عند اختيار شهر. التصفية بالشهر تغيّر المبيعات فقط. ${esc(R.meta.periodNote)}.</div>
       <section class="section">
         <div class="toolbar">
           <label class="field">القطاع
@@ -1744,6 +1745,7 @@
     [8, "أغسطس"],
     [9, "سبتمبر"],
     [10, "أكتوبر"],
+    [11, "نوفمبر"],
   ];
 
   function renderItemPerf() {
@@ -2977,17 +2979,17 @@
   function renderInjaz(host) {
     const root = host || document.getElementById("app");
     const embedded = Boolean(host);
-    const monthKey = { 7: "jul", 8: "aug", 9: "sep", 10: "oct" };
+    const monthKey = { 7: "jul", 8: "aug", 9: "sep", 10: "oct", 11: "nov" };
     const targets = [
       { id: "2026-q3", label: "الربع الثالث 2026", rate: 0.1, months: [7, 8, 9], span: "يوليو إلى سبتمبر", partial: false },
-      { id: "2026-q4", label: "الربع الرابع 2026", rate: 0.2, months: [10], span: "أكتوبر", partial: false },
+      { id: "2026-q4", label: "الربع الرابع 2026", rate: 0.2, months: [10, 11], span: "أكتوبر إلى 7 نوفمبر", partial: true },
     ];
     const bases = new Map();
     R.items.forEach((item) => {
       const name = item.sector || "بدون قطاع";
       let row = bases.get(name);
       if (!row) {
-        row = { name, openValue: 0, months: { 7: 0, 8: 0, 9: 0, 10: 0 } };
+        row = { name, openValue: 0, months: { 7: 0, 8: 0, 9: 0, 10: 0, 11: 0 } };
         bases.set(name, row);
       }
       const unit = item.unitCost || 0;
@@ -3064,7 +3066,7 @@
       const goal = openValue * target.rate;
       const rate = goal ? cleared / goal : null;
       root.querySelector("#injaz-banner").textContent = target.id === "2026-q4"
-        ? `${target.label} يغطي ${target.span} حتى الآن. نوفمبر وديسمبر لم يدخلا بعد.`
+        ? `${target.label} جزئي، ويغطي ${target.span}. بقية نوفمبر وديسمبر لم تدخلا بعد.`
         : target.partial
           ? `${target.label} جزئي، ويغطي ${target.span}.`
           : `${target.label} مكتمل، ويغطي ${target.span}.`;
