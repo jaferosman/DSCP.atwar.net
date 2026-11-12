@@ -465,6 +465,34 @@ tbody tr:hover td.stick { background: #dde4ee; }
   font-variant-numeric: tabular-nums;
 }
 
+.bar-cluster {
+  margin-bottom: 1.15rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.bar-cluster:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.cluster-title {
+  margin: 0 0 0.55rem;
+  font-size: 0.98rem;
+  font-weight: 700;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.7rem;
+  align-items: baseline;
+}
+
+.cluster-meta {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.82rem;
+}
+
 .bars { display: flex; flex-direction: column; gap: 0.38rem; }
 
 .bar-row {

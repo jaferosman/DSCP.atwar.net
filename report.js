@@ -673,7 +673,7 @@
           <button type="button" data-group="all" aria-pressed="true">كل المجموعات</button>
           ${groupButtons}
         </div>
-        <p class="lead">الترتيب حسب قيمة البيع داخل التصفية. الربح قد يكون سالباً رغم ارتفاع المبيعات.</p>
+        <p class="lead">المندوبون مجمّعون حسب المنطقة، والترتيب داخل كل منطقة حسب قيمة البيع. الربح قد يكون سالباً رغم ارتفاع المبيعات.</p>
         <div id="rep-bars"></div>
       </section>
       <section class="section">
@@ -771,9 +771,28 @@
       const sectorLabel = state.sector === "all" ? "كل القطاعات" : state.sector;
       const regionLabel = state.region === "all" ? "كل المناطق" : state.region;
       document.getElementById("rep-banner").textContent = `التصفية المطبقة: ${regionLabel}، ${sectorLabel}، ${groupLabel}.`;
-      const ranked = view.slice().sort((a, b) => b.salesValue - a.salesValue);
-      document.getElementById("rep-bars").innerHTML = ranked.length
-        ? hbars(ranked, (row) => row.rep, (row) => row.salesValue, (value) => num(value, "money"))
+      document.getElementById("rep-bars").innerHTML = view.length
+        ? (() => {
+          const clusters = new Map();
+          view.forEach((row) => {
+            const region = row.region || "بدون منطقة";
+            if (!clusters.has(region)) clusters.set(region, []);
+            clusters.get(region).push(row);
+          });
+          const rankedClusters = [...clusters.entries()]
+            .map(([region, rows]) => ({
+              region,
+              sales: rows.reduce((sum, row) => sum + row.salesValue, 0),
+              rows: rows.slice().sort((a, b) => b.salesValue - a.salesValue),
+            }))
+            .sort((a, b) => b.sales - a.sales || a.region.localeCompare(b.region, "ar"));
+          const scale = Math.max(...view.map((row) => Math.abs(row.salesValue)), 0.0001);
+          return rankedClusters.map((cluster) => `
+            <div class="bar-cluster">
+              <h3 class="cluster-title">${esc(cluster.region)} <span class="cluster-meta">${num(cluster.sales, "money")} · ${fmtQty(cluster.rows.length)} مندوب</span></h3>
+              ${hbars(cluster.rows, (row) => row.rep, (row) => row.salesValue, (value) => num(value, "money"), scale)}
+            </div>`).join("");
+        })()
         : `<p class="lead">لا توجد مبيعات لهذا الاختيار.</p>`;
       mountTable(document.getElementById("rep-table"), repColumns, view, state, draw);
     }
@@ -1581,12 +1600,17 @@
 
   function renderAtwarRegions() {
     const app = document.getElementById("app");
+    const regionNames = Array.from(new Set(R.atwarLines.map((line) => line.region).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ar"));
+    const regionFilterOptions = regionNames.map((region) => `<option value="${esc(region)}">${esc(region)}</option>`).join("");
     app.innerHTML = `
       <div id="region-kpis"></div>
       <p id="filter-banner" class="note" hidden></p>
       <div class="note">العميل يُحسب مرة واحدة داخل المنطقة حتى لو تكررت فواتيره أو أصنافه. إذا اشترى في منطقتين يُحسب في كل منطقة مرة، لذلك مجموع عملاء المناطق قد يزيد على عدد العملاء المختلفين في كامل المبيعات.</div>
       <section class="section">
         <div class="toolbar">
+          <label class="field">المنطقة
+            <select id="filter-region"><option value="all">كل المناطق</option>${regionFilterOptions}</select>
+          </label>
           <label class="field">القطاع
             <select id="filter-sector"><option value="all">كل القطاعات</option>${sectorOptions()}</select>
           </label>
@@ -1613,11 +1637,18 @@
         <h2>تفصيل المنطقة والقطاع</h2>
         <p class="lead">عدد العملاء في هذا الجدول بلا تكرار داخل القطاع والمنطقة معاً. جمعه قد يزيد على عدد عملاء المنطقة، لأن العميل قد يشتري من أكثر من قطاع.</p>
         <div id="region-detail"></div>
+      </section>
+      <section class="section">
+        <h2>كمية المبيع حسب العميل والقطاع</h2>
+        <p class="lead">كل صف عميل داخل منطقة. أعمدة القطاعات تعرض صافي الكمية المباعة لذلك العميل. استخدم تصفية المنطقة لتضييق الجدول.</p>
+        <p class="scroll-hint">انقر عنوان العمود للترتيب. حرّك الجدول أفقياً لرؤية بقية القطاعات.</p>
+        <div id="customer-sector-table"></div>
       </section>`;
 
-    const filters = { sector: "all", month: 0 };
+    const filters = { region: "all", sector: "all", month: 0 };
     const regionState = { sort: "salesValue", dir: -1 };
     const detailState = { sort: "salesValue", dir: -1 };
+    const customerState = { sort: "totalQty", dir: -1 };
     const regionColumns = [
       { key: "region", label: "المنطقة", type: "text", stick: true, html: (row) => esc(row.region) },
       { key: "qty", label: "صافي الكمية", type: "num", html: (row) => num(row.qty, "qty") },
@@ -1635,6 +1666,7 @@
 
     function selectedLines() {
       return R.atwarLines.filter((line) => {
+        if (filters.region !== "all" && line.region !== filters.region) return false;
         if (filters.sector !== "all" && line.sector !== filters.sector) return false;
         if (filters.month && line.month !== filters.month) return false;
         return true;
@@ -1686,15 +1718,73 @@
       }));
     }
 
+    function sectorKeysFor(lines) {
+      const present = new Set(lines.map((line) => line.sector).filter(Boolean));
+      const ordered = R.sectors.map((row) => row.name).filter((name) => present.has(name));
+      present.forEach((name) => {
+        if (!ordered.includes(name)) ordered.push(name);
+      });
+      return ordered;
+    }
+
+    function groupCustomers(lines) {
+      const sectors = sectorKeysFor(lines);
+      const map = new Map();
+      for (const line of lines) {
+        if (!line.customer) continue;
+        const key = `${line.customer}\0${line.region || ""}`;
+        let acc = map.get(key);
+        if (!acc) {
+          acc = { customer: line.customer, region: line.region || "—", totalQty: 0 };
+          sectors.forEach((name) => {
+            acc[name] = 0;
+          });
+          map.set(key, acc);
+        }
+        if (!(line.sector in acc)) acc[line.sector] = 0;
+        acc[line.sector] += line.qty;
+        acc.totalQty += line.qty;
+      }
+      return {
+        sectors,
+        rows: [...map.values()].filter((row) => Math.abs(row.totalQty) > 1e-6),
+      };
+    }
+
+    function customerColumns(sectors) {
+      return [
+        { key: "customer", label: "العميل", type: "text", stick: true, clip: true, html: (row) => esc(row.customer) },
+        { key: "region", label: "المنطقة", type: "text", html: (row) => esc(row.region) },
+        ...sectors.map((name) => ({
+          key: name,
+          label: name,
+          type: "num",
+          html: (row) => {
+            const value = row[name];
+            return Math.abs(value || 0) > 1e-6 ? num(value, "qty") : "—";
+          },
+        })),
+        { key: "totalQty", label: "الإجمالي", type: "num", html: (row) => num(row.totalQty, "qty") },
+      ];
+    }
+
     function draw() {
       const lines = selectedLines();
       const regions = groupRegions(lines);
       const detail = groupDetail(lines);
+      const customerPivot = groupCustomers(lines);
       const banner = document.getElementById("filter-banner");
-      if (filters.sector === "all") banner.hidden = true;
+      const parts = [];
+      if (filters.region !== "all") parts.push(`منطقة ${filters.region}`);
+      if (filters.sector !== "all") parts.push(`قطاع ${filters.sector}`);
+      if (filters.month) {
+        const month = MONTH_OPTIONS.find(([id]) => id === filters.month);
+        parts.push(month ? month[1] : `شهر ${filters.month}`);
+      }
+      if (!parts.length) banner.hidden = true;
       else {
         banner.hidden = false;
-        banner.textContent = `التصفية المطبقة: قطاع ${filters.sector} فقط`;
+        banner.textContent = `التصفية المطبقة: ${parts.join("، ")}`;
       }
       const people = new Set();
       for (const line of lines) {
@@ -1709,7 +1799,7 @@
         { label: "صافي الكمية", html: num(qty, "qty") },
         { label: "المناطق", html: num(regions.length, "qty") },
         { label: "القطاعات", html: num(sectorCount, "qty") },
-        { label: "عملاء بلا تكرار", html: num(people.size, "qty"), note: "في كل المناطق معاً", tone: "good" },
+        { label: "عملاء بلا تكرار", html: num(people.size, "qty"), note: "في النطاق الظاهر", tone: "good" },
         { label: "مجموع عملاء المناطق", html: num(regionCustomers, "qty"), note: "قد يُحسب العميل في أكثر من منطقة" },
       ]);
       const bySales = regions.slice().sort((a, b) => b.salesValue - a.salesValue);
@@ -1721,8 +1811,22 @@
       if (filters.sector === "all") {
         mountTable(document.getElementById("region-detail"), detailColumns, detail, detailState, draw);
       }
+      const host = document.getElementById("customer-sector-table");
+      if (!customerPivot.rows.length) {
+        host.innerHTML = `<p class="lead">لا توجد كميات عملاء لهذا الاختيار.</p>`;
+      } else {
+        if (!customerPivot.sectors.includes(customerState.sort) && customerState.sort !== "customer" && customerState.sort !== "region" && customerState.sort !== "totalQty") {
+          customerState.sort = "totalQty";
+          customerState.dir = -1;
+        }
+        mountTable(host, customerColumns(customerPivot.sectors), customerPivot.rows, customerState, draw);
+      }
     }
 
+    document.getElementById("filter-region").addEventListener("change", (event) => {
+      filters.region = event.target.value;
+      draw();
+    });
     document.getElementById("filter-sector").addEventListener("change", (event) => {
       filters.sector = event.target.value;
       draw();
@@ -1731,11 +1835,18 @@
       filters.month = Number(event.target.value);
       draw();
     });
-    const presetSector = new URLSearchParams(location.search).get("sector");
+    const params = new URLSearchParams(location.search);
+    const presetSector = params.get("sector");
     const sectorSelect = document.getElementById("filter-sector");
     if (presetSector && [...sectorSelect.options].some((option) => option.value === presetSector)) {
       filters.sector = presetSector;
       sectorSelect.value = presetSector;
+    }
+    const presetRegion = params.get("region");
+    const regionSelect = document.getElementById("filter-region");
+    if (presetRegion && [...regionSelect.options].some((option) => option.value === presetRegion)) {
+      filters.region = presetRegion;
+      regionSelect.value = presetRegion;
     }
     draw();
   }
