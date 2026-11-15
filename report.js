@@ -3093,7 +3093,7 @@
     const monthKey = { 7: "jul", 8: "aug", 9: "sep", 10: "oct", 11: "nov" };
     const targets = [
       { id: "2026-q3", label: "الربع الثالث 2026", rate: 0.1, months: [7, 8, 9], span: "يوليو إلى سبتمبر", partial: false },
-      { id: "2026-q4", label: "الربع الرابع 2026", rate: 0.2, months: [10, 11], span: "أكتوبر إلى 7 نوفمبر", partial: true },
+      { id: "2026-q4", label: "الربع الرابع 2026", rate: 0.2, months: [10, 11], span: "أكتوبر إلى 14 نوفمبر", partial: true },
     ];
     const bases = new Map();
     R.items.forEach((item) => {
