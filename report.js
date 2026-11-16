@@ -1001,6 +1001,7 @@
     const aug = row.aug || 0;
     const sep = row.sep || 0;
     const oct = row.oct || 0;
+    const nov = row.nov || 0;
     const up1 = sep > aug + 0.05;
     const down1 = sep < aug - 0.05;
     const up2 = oct > sep + 0.05;
@@ -1032,29 +1033,36 @@
       aug,
       sep,
       oct,
+      nov,
       d1: sep - aug,
       d2: oct - sep,
+      d3: nov - oct,
       dQ: oct - aug,
       p1: aug ? (sep - aug) / aug : null,
       p2: sep ? (oct - sep) / sep : null,
+      p3: oct ? (nov - oct) / oct : null,
       pQ: aug ? (oct - aug) / aug : null,
       kind,
       label,
     };
   }
 
-  function sparkline(aug, sep, oct) {
-    const values = [aug, sep, oct];
+  function sparkline(...values) {
+    if (!values.length) return "";
     const min = Math.min(...values);
     const max = Math.max(...values);
     const span = max - min || 1;
+    const step = values.length > 1 ? 28 : 0;
+    const width = 12 + step * Math.max(values.length - 1, 0);
     const points = values.map((value, index) => {
-      const x = 6 + index * 34;
+      const x = 6 + index * step;
       const y = 26 - ((value - min) / span) * 20;
       return `${x},${y.toFixed(1)}`;
     }).join(" ");
-    const color = oct > aug ? "#0c6844" : oct < aug ? "#9b2c2c" : "#2C4C7C";
-    return `<svg class="spark" viewBox="0 0 80 32" width="80" height="32" aria-hidden="true"><polyline fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" points="${points}"/></svg>`;
+    const first = values[0];
+    const last = values[values.length - 1];
+    const color = last > first ? "#0c6844" : last < first ? "#9b2c2c" : "#2C4C7C";
+    return `<svg class="spark" viewBox="0 0 ${width} 32" width="${width}" height="32" aria-hidden="true"><polyline fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" points="${points}"/></svg>`;
   }
 
   function trendBadge(row) {
@@ -1063,34 +1071,49 @@
 
   const trendColumns = [
     { key: "name", label: "القطاع", type: "text", stick: true, clip: true, html: (row) => esc(row.name) },
-    { key: "path", label: "المسار", type: "text", nosort: true, html: (row) => sparkline(row.aug, row.sep, row.oct) },
+    { key: "path", label: "المسار", type: "text", nosort: true, html: (row) => sparkline(row.aug, row.sep, row.oct, row.nov) },
     { key: "label", label: "الاتجاه", type: "text", html: (row) => trendBadge(row) },
     { key: "aug", label: "أغسطس", type: "num", html: (row) => num(row.aug, "qty") },
     { key: "sep", label: "سبتمبر", type: "num", html: (row) => num(row.sep, "qty") },
     { key: "oct", label: "أكتوبر", type: "num", html: (row) => num(row.oct, "qty") },
+    { key: "nov", label: "نوفمبر (جزئي)", type: "num", html: (row) => num(row.nov, "qty") },
     { key: "d1", label: "سبتمبر − أغسطس", type: "num", html: (row) => num(row.d1, "deltaQty") },
     { key: "p1", label: "نسبة سبتمبر", type: "num", html: (row) => num(row.p1, "deltaPct") },
     { key: "d2", label: "أكتوبر − سبتمبر", type: "num", html: (row) => num(row.d2, "deltaQty") },
     { key: "p2", label: "نسبة أكتوبر", type: "num", html: (row) => num(row.p2, "deltaPct") },
+    { key: "d3", label: "نوفمبر − أكتوبر", type: "num", html: (row) => num(row.d3, "deltaQty") },
+    { key: "p3", label: "نسبة نوفمبر", type: "num", html: (row) => num(row.p3, "deltaPct") },
     { key: "dQ", label: "أكتوبر − أغسطس", type: "num", html: (row) => num(row.dQ, "deltaQty") },
     { key: "pQ", label: "محصلة الأشهر الثلاثة", type: "num", html: (row) => num(row.pQ, "deltaPct") },
   ];
 
+  const COST_MONTH_DEFS = [
+    { id: 7, key: "jul", label: "يوليو" },
+    { id: 8, key: "aug", label: "أغسطس" },
+    { id: 9, key: "sep", label: "سبتمبر" },
+    { id: 10, key: "oct", label: "أكتوبر" },
+    { id: 11, key: "nov", label: "نوفمبر" },
+    { id: 12, key: "dec", label: "ديسمبر" },
+  ];
+
   function completeCostMonths() {
-    const defs = [
-      { id: 7, key: "jul", label: "يوليو" },
-      { id: 8, key: "aug", label: "أغسطس" },
-      { id: 9, key: "sep", label: "سبتمبر" },
-      { id: 10, key: "oct", label: "أكتوبر" },
-      { id: 11, key: "nov", label: "نوفمبر" },
-      { id: 12, key: "dec", label: "ديسمبر" },
-    ];
     const paceMonths = (R.pace && R.pace.months) || [];
-    return defs.filter((def) => {
+    return COST_MONTH_DEFS.filter((def) => {
       const pace = paceMonths.find((month) => Number(month.id) === def.id);
       if (pace) return !pace.partial;
       return R.items.some((item) => Object.prototype.hasOwnProperty.call(item, def.key));
     });
+  }
+
+  function displayCostMonths() {
+    const complete = completeCostMonths();
+    const paceMonths = (R.pace && R.pace.months) || [];
+    const partial = COST_MONTH_DEFS.filter((def) => {
+      const pace = paceMonths.find((month) => Number(month.id) === def.id);
+      return pace && pace.partial;
+    }).map((def) => ({ ...def, label: `${def.label} (جزئي)`, partial: true }));
+    const seen = new Set(complete.map((month) => month.key));
+    return [...complete, ...partial.filter((month) => !seen.has(month.key))];
   }
 
   function monthCostBySector(months) {
@@ -1125,19 +1148,22 @@
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "ar"));
   }
 
-  function monthCostBundle() {
-    const months = completeCostMonths();
-    const rows = monthCostBySector(months);
+  function monthCostBundle(months) {
+    const selected = months || completeCostMonths();
+    const rows = monthCostBySector(selected);
     const openTotal = R.totals.openValue || rows.reduce((sum, row) => sum + (row.openValue || 0), 0);
     const monthTotals = {};
-    months.forEach((month) => {
+    selected.forEach((month) => {
       monthTotals[month.key] = rows.reduce((sum, row) => sum + (row.costs[month.key] || 0), 0);
     });
+    const completeKeys = new Set(completeCostMonths().map((month) => month.key));
+    const spanMonths = selected.filter((month) => completeKeys.has(month.key));
+    const compareMonths = spanMonths.length ? spanMonths : selected;
     const enriched = rows.map((row) => {
-      const cleared = months.reduce((sum, month) => sum + (row.costs[month.key] || 0), 0);
-      const first = months[0] ? row.costs[months[0].key] || 0 : 0;
-      const last = months.length ? row.costs[months[months.length - 1].key] || 0 : 0;
-      const prev = months.length > 1 ? row.costs[months[months.length - 2].key] || 0 : 0;
+      const cleared = selected.reduce((sum, month) => sum + (row.costs[month.key] || 0), 0);
+      const first = compareMonths[0] ? row.costs[compareMonths[0].key] || 0 : 0;
+      const last = compareMonths.length ? row.costs[compareMonths[compareMonths.length - 1].key] || 0 : 0;
+      const prev = compareMonths.length > 1 ? row.costs[compareMonths[compareMonths.length - 2].key] || 0 : 0;
       return {
         ...row,
         cleared,
@@ -1149,20 +1175,21 @@
       };
     });
     const clearedTotal = enriched.reduce((sum, row) => sum + row.cleared, 0);
-    return { months, rows: enriched, openTotal, monthTotals, clearedTotal };
+    return { months: selected, rows: enriched, openTotal, monthTotals, clearedTotal };
   }
 
   function monthCostMatrixHtml(bundle) {
-    const data = bundle || monthCostBundle();
+    const data = bundle || monthCostBundle(displayCostMonths());
     const { months, rows, openTotal, monthTotals, clearedTotal } = data;
-    if (!months.length) return `<p class="lead">لا توجد أشهر مكتملة لعرض تكلفة المباع.</p>`;
+    if (!months.length) return `<p class="lead">لا توجد أشهر لعرض تكلفة المباع.</p>`;
     const head = months.map((month) => `<th class="numcol">${esc(month.label)}</th>`).join("");
     const body = rows.map((row) => {
       const cells = months.map((month) => {
         const cost = row.costs[month.key] || 0;
         const total = monthTotals[month.key] || 0;
         const share = total ? cost / total : null;
-        return `<td class="numcol">${num(cost, "money")}<span class="qty-meta">${num(share, "pct")} من الشهر</span></td>`;
+        const note = month.partial ? "من الشهر الحالي" : "من الشهر";
+        return `<td class="numcol">${num(cost, "money")}<span class="qty-meta">${num(share, "pct")} ${note}</span></td>`;
       }).join("");
       return `<tr><td class="stick">${esc(row.name)}<span class="qty-meta">${num(row.cleared, "money")} · ${num(row.ofOpen, "pct")} من افتتاح القطاع</span></td>${cells}</tr>`;
     }).join("");
@@ -1216,9 +1243,11 @@
 
   function renderHaraka() {
     const rows = R.sectors.map(sectorTrend);
-    const costBundle = monthCostBundle();
+    const costBundle = monthCostBundle(completeCostMonths());
+    const displayBundle = monthCostBundle(displayCostMonths());
     const costMonths = costBundle.months;
-    const costMonthLabels = costMonths.map((month) => month.label).join(" و");
+    const displayMonths = displayBundle.months;
+    const costMonthLabels = displayMonths.map((month) => month.label).join(" و");
     const prevMonth = costMonths.length > 1 ? costMonths[costMonths.length - 2] : null;
     const lastMonth = costMonths.length ? costMonths[costMonths.length - 1] : null;
     const prevCost = prevMonth ? costBundle.monthTotals[prevMonth.key] || 0 : 0;
@@ -1270,9 +1299,9 @@
       </section>
       <section class="section">
         <h2>تكلفة المباع حسب القطاع والشهر</h2>
-        <p class="lead">بجانب اسم القطاع: إجمالي تكلفة التصريف للأشهر المعروضة ونسبته من تكلفة افتتاح القطاع. لكل شهر مكتمل: تكلفة المباع ونسبتها من إجمالي ذلك الشهر. صف الإجمالي يعرض مجموع الشهر ونسبته من إجمالي تكلفة الافتتاح. الأشهر المعروضة الآن: ${esc(costMonthLabels)}.</p>
-        <p class="scroll-hint">يُضاف عمود الشهر الجديد بعد اكتمال الشهر في بيانات التقرير.</p>
-        <div id="month-cost-table">${monthCostMatrixHtml(costBundle)}</div>
+        <p class="lead">بجانب اسم القطاع: إجمالي تكلفة التصريف للأشهر المعروضة ونسبته من تكلفة افتتاح القطاع. لكل شهر: تكلفة المباع ونسبتها من إجمالي ذلك الشهر. صف الإجمالي يعرض مجموع الشهر ونسبته من إجمالي تكلفة الافتتاح. الأشهر المعروضة الآن: ${esc(costMonthLabels)}.</p>
+        <p class="scroll-hint">عمود الشهر الحالي يظهر جزئياً حتى يكتمل الشهر في بيانات التقرير. البطاقات وقراءة الحركة تعتمد الأشهر المكتملة فقط.</p>
+        <div id="month-cost-table">${monthCostMatrixHtml(displayBundle)}</div>
       </section>
       <section class="section">
         <div class="pair">
@@ -1297,7 +1326,7 @@
           <button type="button" data-view="turn" aria-pressed="false">انعكاس</button>
         </div>
         <p class="meta-line" id="trend-meta"></p>
-        <p class="scroll-hint">انقر عنوان العمود للترتيب. المسار يرسم أغسطس ثم سبتمبر ثم أكتوبر.</p>
+        <p class="scroll-hint">انقر عنوان العمود للترتيب. المسار يرسم أغسطس ثم سبتمبر ثم أكتوبر ثم نوفمبر الجزئي. محصلة الأشهر الثلاثة تبقى من أغسطس إلى أكتوبر.</p>
         <div id="trend-table"></div>
       </section>`;
 
@@ -2827,11 +2856,17 @@
   function renderQaemat() {
     const list = R.slowList || [];
     const app = document.getElementById("app");
+    const STOCK_POOLS = [
+      { id: "atwarWh", key: "monthAtwarWh", label: "مستودعات أطوار" },
+      { id: "reps", key: "monthReps", label: "مستودعات المناديب" },
+      { id: "lawazem", key: "monthLawazem", label: "فروع لوازم" },
+    ];
     const state = {
       q: "",
       sector: "all",
       subSector: "all",
       group: "all",
+      stockPool: "all",
       priceMismatch: false,
       sort: "sku",
       dir: 1,
@@ -2840,7 +2875,11 @@
     const sectors = [...new Set(list.map((row) => row.sector).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
     const subSectors = [...new Set(list.map((row) => row.subSector).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
     const asOf = R.meta.monthStockAsOf || "2026-10-31";
-    const asOfLabel = asOf === "2026-10-31" ? "31 أكتوبر 2026" : asOf;
+    const asOfLabel = asOf === "2026-10-31"
+      ? "31 أكتوبر 2026"
+      : asOf === "2026-11-14"
+        ? "14 نوفمبر 2026"
+        : asOf;
 
     function priceMismatch(row) {
       const approved = row.approvedPrice;
@@ -2849,6 +2888,23 @@
 
     function hasApproved(row) {
       return row.approvedPrice != null && finite(row.approvedPrice);
+    }
+
+    function stockQty(row, key) {
+      if (key === "monthAtwarWh" && row.monthAtwarWh == null && row.monthReps == null) return row.monthAtwar || 0;
+      if (key === "monthLawazem" && row.monthLawazem == null) return row.monthTirador || 0;
+      return row[key] || 0;
+    }
+
+    function selectedStockQty(row) {
+      if (state.stockPool === "all") return row.monthTotal || 0;
+      const pool = STOCK_POOLS.find((item) => item.id === state.stockPool);
+      return pool ? stockQty(row, pool.key) : row.monthTotal || 0;
+    }
+
+    function matchesStockPool(row) {
+      if (state.stockPool === "all") return true;
+      return Math.abs(selectedStockQty(row)) > 1e-6;
     }
 
     const summaryColumns = [
@@ -2887,9 +2943,10 @@
       { key: "groupName", label: "مجموعة الرواكد", type: "text", html: (row) => esc(row.groupName) },
       { key: "unitCost", label: "متوسط التكلفة", type: "num", html: (row) => num(row.unitCost, "money") },
       { key: "openQty", label: "إجمالي المخزون الافتتاحي", type: "num", html: (row) => num(row.openQty, "qty") },
-      { key: "monthAtwar", label: "مخزون أطوار نهاية الشهر", type: "num", html: (row) => num(row.monthAtwar, "qty") },
-      { key: "monthTirador", label: "مخزون لوازم نهاية الشهر", type: "num", html: (row) => num(row.monthTirador, "qty") },
-      { key: "monthTotal", label: "إجمالي مخزون نهاية الشهر", type: "num", html: (row) => num(row.monthTotal, "qty") },
+      { key: "monthAtwarWh", label: "مستودعات أطوار", type: "num", html: (row) => num(stockQty(row, "monthAtwarWh"), "qty") },
+      { key: "monthReps", label: "مستودعات المناديب", type: "num", html: (row) => num(stockQty(row, "monthReps"), "qty") },
+      { key: "monthLawazem", label: "فروع لوازم", type: "num", html: (row) => num(stockQty(row, "monthLawazem"), "qty") },
+      { key: "monthTotal", label: "إجمالي مخزون نهاية الأسبوع", type: "num", html: (row) => num(row.monthTotal, "qty") },
       { key: "clearQty", label: "كمية التصريف", type: "num", html: (row) => num(row.clearQty, "deltaQty") },
       { key: "approvedPrice", label: "سعر البيع المعتمد", type: "num", html: (row) => num(row.approvedPrice, "money") },
       {
@@ -2909,6 +2966,7 @@
         if (state.sector !== "all" && row.sector !== state.sector) return false;
         if (state.subSector !== "all" && row.subSector !== state.subSector) return false;
         if (state.group !== "all" && String(row.group) !== String(state.group)) return false;
+        if (!matchesStockPool(row)) return false;
         if (state.priceMismatch && !priceMismatch(row)) return false;
         if (!query) return true;
         return row.sku.includes(query) || (row.name || "").includes(query) || (row.sector || "").includes(query) || (row.subSector || "").includes(query);
@@ -2938,21 +2996,29 @@
       const view = rows();
       const sorted = sortRows(view, columns, state.sort, state.dir);
       const openQty = view.reduce((sum, row) => sum + (row.openQty || 0), 0);
+      const monthAtwarWh = view.reduce((sum, row) => sum + stockQty(row, "monthAtwarWh"), 0);
+      const monthReps = view.reduce((sum, row) => sum + stockQty(row, "monthReps"), 0);
+      const monthLawazem = view.reduce((sum, row) => sum + stockQty(row, "monthLawazem"), 0);
       const monthTotal = view.reduce((sum, row) => sum + (row.monthTotal || 0), 0);
+      const selectedStock = view.reduce((sum, row) => sum + selectedStockQty(row), 0);
       const clearQty = view.reduce((sum, row) => sum + (row.clearQty || 0), 0);
+      const stockLabel = state.stockPool === "all"
+        ? "مخزون نهاية الأسبوع"
+        : `مخزون ${(STOCK_POOLS.find((item) => item.id === state.stockPool) || {}).label || ""}`;
       document.getElementById("qaemat-kpis").innerHTML = kpis([
         { label: "الأصناف", html: num(view.length, "qty") },
         { label: "المخزون الافتتاحي", html: num(openQty, "qty") },
-        { label: "مخزون نهاية أكتوبر", html: num(monthTotal, "qty"), note: asOfLabel },
-        { label: "كمية التصريف", html: num(clearQty, "deltaQty"), note: "افتتاح − نهاية الشهر" },
-        { label: "بأسعار معتمدة", html: num(view.filter((row) => hasApproved(row)).length, "qty") },
-        { label: "بسعر نظام أطوار", html: num(view.filter((row) => row.systemPrice != null).length, "qty") },
+        { label: stockLabel, html: num(selectedStock, "qty"), note: asOfLabel },
+        { label: "مستودعات أطوار", html: num(monthAtwarWh, "qty") },
+        { label: "مستودعات المناديب", html: num(monthReps, "qty") },
+        { label: "فروع لوازم", html: num(monthLawazem, "qty"), note: `الإجمالي ${fmtQty(monthTotal)} · تصريف ${fmtQty(clearQty)}` },
       ]);
       const sectorLabel = state.sector === "all" ? "كل القطاعات" : state.sector;
       const subLabel = state.subSector === "all" ? "كل القطاعات الفرعية" : state.subSector;
       const groupLabel = state.group === "all" ? "كل المجموعات" : (R.groups.find((group) => String(group.id) === String(state.group)) || { name: state.group }).name;
+      const stockPoolLabel = state.stockPool === "all" ? "كل مواقع المخزون" : (STOCK_POOLS.find((item) => item.id === state.stockPool) || {}).label;
       const mismatchLabel = state.priceMismatch ? "، أسعار النظام المخالفة فقط" : "";
-      document.getElementById("qaemat-banner").textContent = `التصفية المطبقة: ${sectorLabel}، ${subLabel}، ${groupLabel}${state.q.trim() ? `، بحث «${state.q.trim()}»` : ""}${mismatchLabel}.`;
+      document.getElementById("qaemat-banner").textContent = `التصفية المطبقة: ${sectorLabel}، ${subLabel}، ${groupLabel}، ${stockPoolLabel}${state.q.trim() ? `، بحث «${state.q.trim()}»` : ""}${mismatchLabel}.`;
       document.getElementById("qaemat-meta").innerHTML = `المعروض ${num(view.length, "qty")} من ${num(list.length, "qty")} صنفاً.`;
       mountTable(document.getElementById("qaemat-table"), columns, sorted, state, draw);
       const wrap = document.querySelector("#qaemat-table .table-wrap");
@@ -2962,6 +3028,7 @@
     const sectorOptions = sectors.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
     const subOptions = subSectors.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
     const groupButtons = R.groups.map((group) => `<button type="button" data-group="${group.id}" aria-pressed="false">${esc(group.name)}</button>`).join("");
+    const stockButtons = STOCK_POOLS.map((pool) => `<button type="button" data-stock="${pool.id}" aria-pressed="false">${esc(pool.label)}</button>`).join("");
     const mismatchCount = list.filter(priceMismatch).length;
 
     app.innerHTML = `
@@ -2998,11 +3065,16 @@
           <button type="button" data-group="all" aria-pressed="true">كل المجموعات</button>
           ${groupButtons}
         </div>
+        <p class="lead">تصفية المخزون حسب موقع التخزين. عند اختيار موقع تُعرض الأصناف ذات رصيد غير صفري فيه فقط.</p>
+        <div class="chips" id="qaemat-stock">
+          <button type="button" data-stock="all" aria-pressed="true">كل المواقع</button>
+          ${stockButtons}
+        </div>
         <div class="toolbar">
           <button type="button" id="qaemat-export" class="action">تصدير أسعار البيع إلى إكسل</button>
         </div>
         <p class="meta-line" id="qaemat-meta"></p>
-        <p class="scroll-hint">مخزون نهاية الشهر حتى ${esc(asOfLabel)}. سعر النظام = أقل شريحة في قائمة سعر بيع عملاء أطوار. انقر عنوان العمود للترتيب.</p>
+        <p class="scroll-hint">مخزون نهاية الأسبوع حتى ${esc(asOfLabel)}. سعر النظام = أقل شريحة في قائمة سعر بيع عملاء أطوار. انقر عنوان العمود للترتيب.</p>
         <div id="qaemat-table"></div>
       </section>`;
 
@@ -3078,6 +3150,15 @@
       if (!button) return;
       state.group = button.dataset.group;
       document.querySelectorAll("#qaemat-groups button").forEach((item) => {
+        item.setAttribute("aria-pressed", item === button ? "true" : "false");
+      });
+      draw();
+    });
+    document.getElementById("qaemat-stock").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      state.stockPool = button.dataset.stock;
+      document.querySelectorAll("#qaemat-stock button").forEach((item) => {
         item.setAttribute("aria-pressed", item === button ? "true" : "false");
       });
       draw();
