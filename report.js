@@ -189,13 +189,13 @@
     return `<div class="pie-wrap"><svg class="pie" viewBox="0 0 160 160" role="img">${paths}</svg><div class="pie-legend">${legend}</div></div>`;
   }
 
-  function kpis(items, extra) {
+  function kpis(items, extra, trailing) {
     return `<div class="kpis${extra ? ` ${extra}` : ""}">${items.map((item) => `
       <article class="kpi ${item.tone || ""}">
         <p class="kpi-label">${esc(item.label)}</p>
         <p class="kpi-value">${item.html}</p>
         ${item.note ? `<p class="kpi-note">${item.note}</p>` : ""}
-      </article>`).join("")}</div>`;
+      </article>`).join("")}${trailing || ""}</div>`;
   }
 
   function branchLabel(row) {
@@ -221,23 +221,25 @@
     const negativeItems = R.items.filter(negativeQty);
     const idleItems = R.items.filter(noMovement);
     const app = document.getElementById("app");
+    const homeMetrics = [
+      { label: "إنجاز الكمية", html: rate(t.qtyRate), tone: "gold", note: `${fmtQty(t.netQty)} من ${fmtQty(t.openQty)}`, big: true },
+      { label: "إنجاز التكلفة", html: rate(costRate), tone: "gold", note: `${fmtMoney(t.cogs)} من ${fmtMoney(t.openValue)}`, big: true },
+      { label: "كمية المخزون الافتتاحي", html: num(t.openQty, "qty"), note: "وحدة" },
+      { label: "كمية المباع", html: num(t.netQty, "qty"), note: R.meta.period.replace("1 يوليو 2026 — ", "يوليو إلى ").replace("2026", "").trim() },
+      { label: "تكلفة المخزون الافتتاحي", html: num(t.openValue, "money"), note: "بالتكلفة" },
+      { label: "تكلفة المباع", html: num(t.cogs, "money"), note: "كمية مباعة × تكلفة الحبة" },
+      { label: "قيمة المبيعات", html: num(t.salesValue, "money"), note: "غير شاملة الضريبة" },
+      { label: "صافي الربح", html: num(t.profit, "profit"), tone: t.profit >= 0 ? "good" : "bad" },
+      { label: "هامش الربح", html: rate(t.margin), tone: t.margin >= 0 ? "good" : "bad", note: "الربح من المبيعات" },
+    ].map((item) => `
+      <article class="kpi ${item.tone || ""}${item.big ? " kpi-rate" : ""}">
+        <p class="kpi-label">${esc(item.label)}</p>
+        <p class="kpi-value">${item.html}</p>
+        ${item.note ? `<p class="kpi-note">${item.note}</p>` : ""}
+      </article>`).join("");
     app.innerHTML = `
-      ${kpis([
-        { label: "كمية المخزون الافتتاحي", html: num(t.openQty, "qty"), note: "وحدة" },
-        { label: "كمية المباع", html: num(t.netQty, "qty"), note: R.meta.period.replace("1 يوليو 2026 — ", "يوليو إلى ").replace("2026", "").trim() },
-        { label: "إنجاز الكمية", html: rate(t.qtyRate), tone: "gold", note: "المباع من الافتتاح" },
-        { label: "تكلفة المخزون الافتتاحي", html: num(t.openValue, "money"), note: "بالتكلفة" },
-        { label: "تكلفة المباع", html: num(t.cogs, "money"), note: "كمية مباعة × تكلفة الحبة" },
-        { label: "إنجاز التكلفة", html: rate(costRate), tone: "gold", note: "تكلفة المباع من الافتتاح" },
-        { label: "قيمة المبيعات", html: num(t.salesValue, "money"), note: "غير شاملة الضريبة" },
-        { label: "صافي الربح", html: num(t.profit, "profit"), tone: t.profit >= 0 ? "good" : "bad" },
-        { label: "هامش الربح", html: rate(t.margin), tone: t.margin >= 0 ? "good" : "bad", note: "الربح من المبيعات" },
-      ], "board")}
-      <div class="donuts">
-        ${donutCard(t.qtyRate, "إنجاز الكمية", `${fmtQty(t.netQty)} من ${fmtQty(t.openQty)}`)}
-        ${donutCard(costRate, "إنجاز التكلفة", `${fmtMoney(t.cogs)} من ${fmtMoney(t.openValue)}`)}
-      </div>
-      <div class="cards">
+      <div class="home-board">
+        ${homeMetrics}
         <a class="card" href="asnaf.html">
           <span class="card-n">01</span>
           <div><h2>الأصناف والقطاعات</h2><p>الأداء حسب القطاع وحسب الصنف، مع معدلي إنجاز الكمية والقيمة.</p></div>
