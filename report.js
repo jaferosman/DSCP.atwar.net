@@ -302,7 +302,7 @@
         </a>
         <a class="card" href="qaemat.html">
           <span class="card-n">13</span>
-          <div><h2>قائمة الرواكد</h2><p>التصنيف والتكلفة والافتتاح ومخزون نهاية أكتوبر وأسعار البيع المعتمدة والنظام.</p></div>
+          <div><h2>قائمة الرواكد</h2><p>التصنيف والافتتاح ومخزون نهاية الأسبوع وأسعار البيع المعتمدة والنظام.</p></div>
           <div class="card-stat"><strong class="num">${fmtQty((R.slowList || []).length || R.meta.itemCount)}</strong><span>صنف</span></div>
         </a>
       </div>
@@ -2943,7 +2943,6 @@
       { key: "sector", label: "القطاع الرئيسي", type: "text", clip: true, html: (row) => esc(row.sector) },
       { key: "subSector", label: "القطاع الفرعي", type: "text", clip: true, html: (row) => esc(row.subSector) },
       { key: "groupName", label: "مجموعة الرواكد", type: "text", html: (row) => esc(row.groupName) },
-      { key: "unitCost", label: "متوسط التكلفة", type: "num", html: (row) => num(row.unitCost, "money") },
       { key: "openQty", label: "إجمالي المخزون الافتتاحي", type: "num", html: (row) => num(row.openQty, "qty") },
       { key: "monthAtwarWh", label: "مستودعات أطوار", type: "num", html: (row) => num(stockQty(row, "monthAtwarWh"), "qty") },
       { key: "monthReps", label: "مستودعات المناديب", type: "num", html: (row) => num(stockQty(row, "monthReps"), "qty") },
@@ -3088,7 +3087,6 @@
         "القطاع الرئيسي",
         "القطاع الفرعي",
         "مجموعة الرواكد",
-        "متوسط التكلفة",
         "مخزون مستودعات أطوار",
         "مخزون المناديب",
         "مخزون لوازم",
@@ -3109,7 +3107,6 @@
           row.sector,
           row.subSector,
           row.groupName,
-          row.unitCost == null ? "" : row.unitCost,
           stockQty(row, "monthAtwarWh"),
           stockQty(row, "monthReps"),
           stockQty(row, "monthLawazem"),
