@@ -3073,7 +3073,7 @@
           ${stockButtons}
         </div>
         <div class="toolbar">
-          <button type="button" id="qaemat-export" class="action">تصدير أسعار البيع إلى إكسل</button>
+          <button type="button" id="qaemat-export" class="action">تصدير القائمة والمخزون إلى إكسل</button>
         </div>
         <p class="meta-line" id="qaemat-meta"></p>
         <p class="scroll-hint">مخزون نهاية الأسبوع حتى ${esc(asOfLabel)}. سعر النظام = أقل شريحة في قائمة سعر بيع عملاء أطوار. انقر عنوان العمود للترتيب.</p>
@@ -3088,6 +3088,10 @@
         "القطاع الرئيسي",
         "القطاع الفرعي",
         "مجموعة الرواكد",
+        "متوسط التكلفة",
+        "مخزون مستودعات أطوار",
+        "مخزون المناديب",
+        "مخزون لوازم",
         "سعر البيع المعتمد",
         "سعر البيع في النظام",
       ];
@@ -3105,6 +3109,10 @@
           row.sector,
           row.subSector,
           row.groupName,
+          row.unitCost == null ? "" : row.unitCost,
+          stockQty(row, "monthAtwarWh"),
+          stockQty(row, "monthReps"),
+          stockQty(row, "monthLawazem"),
           row.approvedPrice == null ? "" : row.approvedPrice,
           row.systemPrice == null ? "" : row.systemPrice,
         ];
@@ -3115,7 +3123,7 @@
 <?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
- <Worksheet ss:Name="أسعار الرواكد">
+ <Worksheet ss:Name="قائمة الرواكد">
   <Table>${head}${body}</Table>
  </Worksheet>
 </Workbook>`;
@@ -3124,7 +3132,7 @@
       const link = document.createElement("a");
       const stamp = new Date().toISOString().slice(0, 10);
       link.href = url;
-      link.download = `أسعار_الرواكد_${stamp}.xls`;
+      link.download = `قائمة_الرواكد_المخزون_${stamp}.xls`;
       document.body.appendChild(link);
       link.click();
       link.remove();
